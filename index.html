@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<base target="_top">
+<title>학원 교재 관리 대시보드</title>
+<style>
+  :root {
+    --primary: #2f5fdb;
+    --border: #e0e3e8;
+    --bg: #f5f6f8;
+    --text: #222;
+    --muted: #888;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    min-width: 1280px;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    font-size: 14px;
+  }
+  #app { max-width: 1280px; margin: 0 auto; padding: 24px; }
+
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 24px;
+    margin-bottom: 20px;
+  }
+  .topbar h1 { font-size: 20px; margin: 0; }
+  .user-info { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    color: #fff;
+  }
+  .badge.admin { background: #2f5fdb; }
+  .badge.teacher { background: #4caf50; }
+
+  .card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 14px; }
+
+  .search-row, .filter-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  input[type="text"], input#searchInput, select {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  input#searchInput { flex: 1; }
+  select { min-width: 160px; }
+  button {
+    padding: 8px 18px;
+    border: none;
+    border-radius: 6px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  button.secondary { background: #6b7280; }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .book-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .book-card .name { font-weight: bold; margin-bottom: 6px; }
+  .book-card .row { display: flex; justify-content: space-between; color: #555; padding: 2px 0; }
+  .empty-msg { color: var(--muted); padding: 12px 0; }
+
+  .table-header-row {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    min-height: 32px;
+    margin-bottom: 8px;
+  }
+  .total-display {
+    font-size: 20px;
+    font-weight: bold;
+    color: #c62828;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    text-align: center;
+    font-size: 13px;
+  }
+  th { background: #f0f2f5; }
+  td.unregistered { color: #c62828; }
+
+  .table-footer-row { display: flex; justify-content: flex-end; }
+
+  #printArea { display: none; }
+
+  @media print {
+    body * { visibility: hidden; }
+    #printArea, #printArea * { visibility: visible; }
+    #printArea {
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      padding: 20px;
+    }
+    #printArea .print-condition { font-size: 13px; margin-bottom: 10px; }
+    #printArea table { width: 100%; border-collapse: collapse; }
+    #printArea th, #printArea td { border: 1px solid #333; padding: 6px 8px; font-size: 12px; text-align: center; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <h1>학원 교재 관리 대시보드</h1>
+    <div class="user-info">
+      <span id="userEmailDisplay"><?= userEmail ?></span>
+      <span id="roleBadge" class="badge"><?= userRole ?></span>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>교재 낱개 검색</h2>
+    <div class="search-row">
+      <input type="text" id="searchInput" placeholder="교재명 또는 ISBN을 입력하세요">
+      <button id="searchBtn">검색</button>
+    </div>
+    <div id="searchResults" class="card-grid"></div>
+  </section>
+
+  <section class="card">
+    <h2>반별 교재 조회</h2>
+    <div class="filter-row">
+      <select id="campusSelect"><option value="">관 선택</option></select>
+      <select id="gradeSelect"><option value="">반(학년) 선택</option></select>
+      <select id="monthSelect"><option value="">사용 월 선택</option></select>
+      <button id="queryBtn">조회</button>
+    </div>
+
+    <div class="table-header-row">
+      <div id="totalDisplay" class="total-display" style="display:none;">★ 청구 총액: <span id="totalAmount">0</span>원</div>
+    </div>
+
+    <table id="resultTable">
+      <thead><tr id="tableHeadRow"></tr></thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+    <div id="tableEmptyMsg" class="empty-msg" style="display:none;">조회 결과가 없습니다.</div>
+
+    <div class="table-footer-row">
+      <button id="pdfBtn">PDF로 저장</button>
+    </div>
+  </section>
+</div>
+
+<div id="printArea"></div>
+
+<script>
+  var isAdmin = false;
+  var currentRows = [];
+  var currentCondition = null;
+
+  document.addEventListener('DOMContentLoaded', function () {
+    document.getElementById('roleBadge').classList.add(
+      '<?= userRole ?>' === '관리자' ? 'admin' : 'teacher'
+    );
+
+    google.script.run
+      .withSuccessHandler(onInit)
+      .withFailureHandler(onError)
+      .initApp();
+
+    document.getElementById('searchBtn').addEventListener('click', doSearch);
+    document.getElementById('searchInput').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') doSearch();
+    });
+    document.getElementById('queryBtn').addEventListener('click', doQuery);
+    document.getElementById('pdfBtn').addEventListener('click', doPdf);
+  });
+
+  function onInit(data) {
+    isAdmin = !!data.isAdmin;
+    fillSelect('campusSelect', data.campuses, '관 선택');
+    fillSelect('gradeSelect', data.grades, '반(학년) 선택');
+    fillSelect('monthSelect', data.months, '사용 월 선택');
+  }
+
+  function fillSelect(id, options, placeholder) {
+    var select = document.getElementById(id);
+    select.innerHTML = '<option value="">' + placeholder + '</option>';
+    options.forEach(function (opt) {
+      var el = document.createElement('option');
+      el.value = opt;
+      el.textContent = opt;
+      select.appendChild(el);
+    });
+  }
+
+  function onError(err) {
+    var message = (err && err.message) || String(err);
+    if (message.indexOf('ACCESS_DENIED') !== -1) {
+      alert('접근 권한이 없습니다. 관리자에게 문의하세요.');
+      location.reload();
+      return;
+    }
+    alert('오류가 발생했습니다: ' + message);
+  }
+
+  /* ---------------- 섹션 A: 낱개 검색 ---------------- */
+
+  function doSearch() {
+    var keyword = document.getElementById('searchInput').value.trim();
+    if (!keyword) return;
+    google.script.run
+      .withSuccessHandler(renderSearchResults)
+      .withFailureHandler(onError)
+      .searchBooks(keyword);
+  }
+
+  function renderSearchResults(books) {
+    var container = document.getElementById('searchResults');
+    container.innerHTML = '';
+    if (!books.length) {
+      container.innerHTML = '<div class="empty-msg">검색 결과가 없습니다.</div>';
+      return;
+    }
+    books.forEach(function (book) {
+      var card = document.createElement('div');
+      card.className = 'book-card';
+      card.innerHTML =
+        '<div class="name">' + escapeHtml(book.bookName) + '</div>' +
+        '<div class="row"><span>과목</span><span>' + escapeHtml(book.subject) + '</span></div>' +
+        '<div class="row"><span>출판사</span><span>' + escapeHtml(book.publisher) + '</span></div>' +
+        '<div class="row"><span>ISBN</span><span>' + escapeHtml(book.isbn) + '</span></div>' +
+        '<div class="row"><span>청구가격</span><span>' + book.price.toLocaleString('ko-KR') + '원</span></div>' +
+        '<div class="row"><span>학년</span><span>' + escapeHtml(book.grade) + '</span></div>' +
+        '<div class="row"><span>대상 월</span><span>' + escapeHtml(book.targetMonth) + '</span></div>';
+      container.appendChild(card);
+    });
+  }
+
+  /* ---------------- 섹션 B: 반별 조회 ---------------- */
+
+  function doQuery() {
+    var campus = document.getElementById('campusSelect').value;
+    var grade = document.getElementById('gradeSelect').value;
+    var month = document.getElementById('monthSelect').value;
+    if (!campus || !grade || !month) {
+      alert('관 / 반(학년) / 사용 월을 모두 선택해주세요.');
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(renderTable)
+      .withFailureHandler(onError)
+      .getClassBooks(campus, grade, month);
+  }
+
+  function renderTable(data) {
+    isAdmin = !!data.isAdmin;
+    currentRows = data.rows;
+    currentCondition = data.condition;
+
+    var headRow = document.getElementById('tableHeadRow');
+    var body = document.getElementById('tableBody');
+    headRow.innerHTML = '';
+    body.innerHTML = '';
+
+    var headers = [];
+    if (isAdmin) headers.push('<input type="checkbox" id="selectAllCheckbox">');
+    headers.push('NO', '과목', '교재명', '출판사', 'ISBN', '청구가격', '사용 월');
+    headers.forEach(function (h) {
+      var th = document.createElement('th');
+      th.innerHTML = h;
+      headRow.appendChild(th);
+    });
+
+    document.getElementById('tableEmptyMsg').style.display = data.rows.length ? 'none' : 'block';
+
+    data.rows.forEach(function (row) {
+      var tr = document.createElement('tr');
+      var cells = [];
+      if (isAdmin) {
+        cells.push('<td><input type="checkbox" class="rowCheckbox" data-price="' + row.price + '"></td>');
+      }
+      cells.push('<td>' + row.no + '</td>');
+      cells.push('<td class="' + (row.registered ? '' : 'unregistered') + '">' + escapeHtml(row.subject) + '</td>');
+      cells.push('<td>' + escapeHtml(row.bookName) + '</td>');
+      cells.push('<td class="' + (row.registered ? '' : 'unregistered') + '">' + escapeHtml(row.publisher) + '</td>');
+      cells.push('<td class="' + (row.registered ? '' : 'unregistered') + '">' + escapeHtml(row.isbn) + '</td>');
+      cells.push('<td class="' + (row.registered ? '' : 'unregistered') + '">' + escapeHtml(row.priceLabel) + '</td>');
+      cells.push('<td>' + escapeHtml(row.targetMonth) + '</td>');
+      tr.innerHTML = cells.join('');
+      body.appendChild(tr);
+    });
+
+    var totalDisplay = document.getElementById('totalDisplay');
+    if (isAdmin) {
+      totalDisplay.style.display = 'block';
+      updateTotal();
+      var selectAll = document.getElementById('selectAllCheckbox');
+      selectAll.addEventListener('change', function () {
+        document.querySelectorAll('.rowCheckbox').forEach(function (cb) {
+          cb.checked = selectAll.checked;
+        });
+        updateTotal();
+      });
+      document.querySelectorAll('.rowCheckbox').forEach(function (cb) {
+        cb.addEventListener('change', updateTotal);
+      });
+    } else {
+      totalDisplay.style.display = 'none';
+    }
+  }
+
+  function updateTotal() {
+    var total = 0;
+    document.querySelectorAll('.rowCheckbox:checked').forEach(function (cb) {
+      total += Number(cb.getAttribute('data-price')) || 0;
+    });
+    document.getElementById('totalAmount').textContent = total.toLocaleString('ko-KR');
+  }
+
+  /* ---------------- 로직 3: PDF 저장 (브라우저 인쇄) ---------------- */
+
+  function doPdf() {
+    if (!currentCondition || !currentRows.length) {
+      alert('먼저 반별 교재를 조회해주세요.');
+      return;
+    }
+
+    var rowsToPrint;
+    if (isAdmin) {
+      var checkedPrices = [];
+      document.querySelectorAll('.rowCheckbox').forEach(function (cb, idx) {
+        if (cb.checked) checkedPrices.push(idx);
+      });
+      rowsToPrint = currentRows.filter(function (_, idx) { return checkedPrices.indexOf(idx) !== -1; });
+      if (!rowsToPrint.length) {
+        alert('PDF에 포함할 항목을 선택해주세요.');
+        return;
+      }
+    } else {
+      rowsToPrint = currentRows;
+    }
+
+    var printArea = document.getElementById('printArea');
+    var conditionLine =
+      '관: ' + escapeHtml(currentCondition.campus) +
+      ' / 반: ' + escapeHtml(currentCondition.grade) +
+      ' / 사용 월: ' + escapeHtml(currentCondition.month);
+
+    var rowsHtml = rowsToPrint.map(function (row, idx) {
+      return '<tr>' +
+        '<td>' + (idx + 1) + '</td>' +
+        '<td>' + escapeHtml(row.subject) + '</td>' +
+        '<td>' + escapeHtml(row.bookName) + '</td>' +
+        '<td>' + escapeHtml(row.publisher) + '</td>' +
+        '<td>' + escapeHtml(row.isbn) + '</td>' +
+        '<td>' + escapeHtml(row.priceLabel) + '</td>' +
+        '<td>' + escapeHtml(row.targetMonth) + '</td>' +
+        '</tr>';
+    }).join('');
+
+    printArea.innerHTML =
+      '<div class="print-condition">' + conditionLine + '</div>' +
+      '<table>' +
+      '<thead><tr><th>NO</th><th>과목</th><th>교재명</th><th>출판사</th><th>ISBN</th><th>청구가격</th><th>사용 월</th></tr></thead>' +
+      '<tbody>' + rowsHtml + '</tbody>' +
+      '</table>';
+
+    window.print();
+  }
+
+  function escapeHtml(value) {
+    return String(value === null || value === undefined ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>
