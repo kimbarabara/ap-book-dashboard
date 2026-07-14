@@ -105,6 +105,17 @@ function normalize_(value) {
   return String(value === null || value === undefined ? '' : value).trim();
 }
 
+/**
+ * 검색/조회 결과 공통 정렬: 1차 과목 가나다순, 2차 사용 월(대상 월) 가나다순
+ */
+function sortBySubjectThenMonth_(rows) {
+  return rows.slice().sort(function (a, b) {
+    const subjectCompare = normalize_(a.subject).localeCompare(normalize_(b.subject), 'ko');
+    if (subjectCompare !== 0) return subjectCompare;
+    return normalize_(a.targetMonth).localeCompare(normalize_(b.targetMonth), 'ko');
+  });
+}
+
 /* ===================================================================
  * 접근 제어 (로직 4)
  * =================================================================== */
@@ -236,7 +247,7 @@ function searchBooks(keyword) {
   if (!query) return [];
 
   const books = readSheetAsObjects_(SHEET_NAMES.BOOK_DB);
-  return books
+  const matched = books
     .filter(function (row) {
       const name = normalize_(row[BOOK_DB_FIELDS.BOOK_NAME]).toLowerCase();
       const isbn = normalize_(row[BOOK_DB_FIELDS.ISBN]).toLowerCase();
@@ -253,6 +264,8 @@ function searchBooks(keyword) {
         targetMonth: normalize_(row[BOOK_DB_FIELDS.TARGET_MONTH])
       };
     });
+
+  return sortBySubjectThenMonth_(matched);
 }
 
 /**
@@ -287,13 +300,12 @@ function getClassBooks(campus, grade, month) {
     return campusMatch && gradeMatch && monthMatch;
   });
 
-  const result = filtered.map(function (row, index) {
+  const joined = filtered.map(function (row) {
     const bookName = normalize_(row[CLASS_SETTING_FIELDS.BOOK_NAME]);
     const bookInfo = bookMap[bookName];
     const registered = !!bookInfo;
 
     return {
-      no: index + 1,
       bookName: bookName,
       subject: registered ? normalize_(bookInfo[BOOK_DB_FIELDS.SUBJECT]) : UNREGISTERED_LABEL,
       publisher: registered ? normalize_(bookInfo[BOOK_DB_FIELDS.PUBLISHER]) : UNREGISTERED_LABEL,
@@ -303,6 +315,11 @@ function getClassBooks(campus, grade, month) {
       targetMonth: normalize_(row[CLASS_SETTING_FIELDS.TARGET_MONTH]),
       registered: registered
     };
+  });
+
+  const result = sortBySubjectThenMonth_(joined).map(function (row, index) {
+    row.no = index + 1;
+    return row;
   });
 
   return {
@@ -346,12 +363,11 @@ function getBooksBySubject(campus, grade, subject) {
     return campusMatch && gradeMatch && subjectMatch;
   });
 
-  const result = filtered.map(function (row, index) {
+  const joined = filtered.map(function (row) {
     const bookName = normalize_(row[CLASS_SETTING_FIELDS.BOOK_NAME]);
     const bookInfo = bookMap[bookName];
 
     return {
-      no: index + 1,
       bookName: bookName,
       subject: normalize_(bookInfo[BOOK_DB_FIELDS.SUBJECT]),
       publisher: normalize_(bookInfo[BOOK_DB_FIELDS.PUBLISHER]),
@@ -361,6 +377,11 @@ function getBooksBySubject(campus, grade, subject) {
       targetMonth: normalize_(row[CLASS_SETTING_FIELDS.TARGET_MONTH]),
       registered: true
     };
+  });
+
+  const result = sortBySubjectThenMonth_(joined).map(function (row, index) {
+    row.no = index + 1;
+    return row;
   });
 
   return {
