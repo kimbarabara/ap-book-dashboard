@@ -16,8 +16,7 @@
 const SHEET_NAMES = {
   BOOK_DB: '교재DB',
   CLASS_SETTING: '반별교재셋팅',
-  USER_PERMISSION: '사용자권한',
-  ACCESS_LOG: '접속기록'
+  USER_PERMISSION: '사용자권한'
 };
 
 // 교재DB 탭의 헤더(컬럼) 이름
@@ -44,13 +43,6 @@ const CLASS_SETTING_FIELDS = {
 const USER_PERMISSION_FIELDS = {
   EMAIL: '이메일',
   ROLE: '구분'
-};
-
-// 접속기록 탭의 헤더(컬럼) 이름 — 없으면 자동으로 생성됨
-const ACCESS_LOG_FIELDS = {
-  EMAIL: '이메일',
-  ROLE: '역할',
-  TIME: '접속일시'
 };
 
 /**
@@ -215,19 +207,36 @@ function doGet(e) {
 }
 
 /**
- * 접속기록 탭에 접속 로그를 한 줄 남긴다. 탭이 없으면 자동 생성한다.
+ * 접속 로그를 Apps Script 자체 저장소(PropertiesService)에 남긴다.
+ * 스프레드시트에 직접 쓰지 않는 이유: 뷰어 권한만 있는 계정은 시트에 쓸 수 없어서
+ * (뷰어=읽기 전용) 시트에 로그를 기록하면 그 계정들의 접속 자체가 에러로 막힌다.
+ * PropertiesService는 시트 공유 권한과 무관하게 동작한다.
  * 미등록 이메일의 접속 시도도 남겨서 관리자가 확인할 수 있게 한다.
  */
+const ACCESS_LOG_KEY_PREFIX = 'log_';
+const MAX_ACCESS_LOGS = 500;
+
 function logAccess_(email, role) {
-  const ss = getSpreadsheet_();
-  let sheet = ss.getSheetByName(SHEET_NAMES.ACCESS_LOG);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAMES.ACCESS_LOG);
-    sheet.getRange(1, 1, 1, 3).setValues([[
-      ACCESS_LOG_FIELDS.EMAIL, ACCESS_LOG_FIELDS.ROLE, ACCESS_LOG_FIELDS.TIME
-    ]]).setFontWeight('bold');
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const key = ACCESS_LOG_KEY_PREFIX + Utilities.formatDate(new Date(), 'Etc/UTC', "yyyyMMdd'T'HHmmss'Z'") + '_' + Math.random().toString(36).slice(2, 8);
+    props.setProperty(key, JSON.stringify({
+      email: email || '(알 수 없음)',
+      role: role || '미등록',
+      time: new Date().toISOString()
+    }));
+    pruneAccessLogsIfNeeded_(props);
+  } catch (e) {
+    // 접속 기록 저장에 실패해도 로그인 자체는 막지 않는다.
   }
-  sheet.appendRow([email || '(알 수 없음)', role || '미등록', new Date()]);
+}
+
+function pruneAccessLogsIfNeeded_(props) {
+  const keys = props.getKeys().filter(function (k) { return k.indexOf(ACCESS_LOG_KEY_PREFIX) === 0; });
+  if (keys.length <= MAX_ACCESS_LOGS + 50) return;
+  keys.sort();
+  const toDelete = keys.slice(0, keys.length - MAX_ACCESS_LOGS);
+  toDelete.forEach(function (k) { props.deleteProperty(k); });
 }
 
 /* ===================================================================
@@ -476,25 +485,35 @@ function getOnlineUsers() {
 }
 
 /**
- * 접속기록 탭의 최근 기록을 최신순으로 반환한다 (관리자 전용).
+ * 저장된 접속 로그를 최신순으로 반환한다 (관리자 전용).
  */
 function getAccessLogs(limit) {
   requireAdmin_();
 
-  const rows = readSheetAsObjects_(SHEET_NAMES.ACCESS_LOG);
+  const props = PropertiesService.getScriptProperties();
   const maxCount = limit || 200;
-
-  return rows
-    .map(function (row) {
-      const time = row[ACCESS_LOG_FIELDS.TIME];
-      return {
-        email: normalize_(row[ACCESS_LOG_FIELDS.EMAIL]),
-        role: normalize_(row[ACCESS_LOG_FIELDS.ROLE]),
-        time: (time instanceof Date) ? Utilities.formatDate(time, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss') : normalize_(time)
-      };
-    })
+  const keys = props.getKeys()
+    .filter(function (k) { return k.indexOf(ACCESS_LOG_KEY_PREFIX) === 0; })
+    .sort()
     .reverse()
     .slice(0, maxCount);
+
+  return keys.map(function (key) {
+    const entry = JSON.parse(props.getProperty(key));
+    return {
+      email: entry.email,
+      role: entry.role,
+      time: formatLogTime_(entry.time)
+    };
+  });
+}
+
+function formatLogTime_(isoString) {
+  try {
+    return Utilities.formatDate(new Date(isoString), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  } catch (e) {
+    return isoString;
+  }
 }
 
 /* ===================================================================
