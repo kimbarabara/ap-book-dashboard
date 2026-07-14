@@ -50,9 +50,12 @@ const ROLE = {
   TEACHER: '직원'
 };
 
-const COMMON_CAMPUS = '공용';   // '관' 값이 이 값이면 모든 관에서 공통으로 보여야 함
+const COMMON_CAMPUS = '공통';   // '관' 값이 이 값이면 모든 관에서 공통으로 보여야 함
 const COMMON_MONTH = '공통';    // '대상 월' 값이 이 값이면 어떤 월을 선택해도 항상 포함
 const UNREGISTERED_LABEL = '교재DB 미등록';
+
+// 관 드롭다운에 노출할 관 목록 (이 목록에 없는 값은 시트에 있어도 검색 옵션에 나타나지 않음)
+const SELECTABLE_CAMPUSES = ['1관', '2관'];
 
 /* ===================================================================
  * 공통 유틸
@@ -191,17 +194,14 @@ function initApp() {
   const settings = readSheetAsObjects_(SHEET_NAMES.CLASS_SETTING);
   const books = readSheetAsObjects_(SHEET_NAMES.BOOK_DB);
 
-  const campusSet = {};
   const gradeSet = {};
   const monthSet = {};
   const subjectSet = {};
 
   settings.forEach(function (row) {
-    const campus = normalize_(row[CLASS_SETTING_FIELDS.CAMPUS]);
     const grade = normalize_(row[CLASS_SETTING_FIELDS.GRADE_CLASS]);
     const month = normalize_(row[CLASS_SETTING_FIELDS.TARGET_MONTH]);
 
-    if (campus && campus !== COMMON_CAMPUS) campusSet[campus] = true;
     if (grade) gradeSet[grade] = true;
     if (month && month !== COMMON_MONTH) monthSet[month] = true;
   });
@@ -219,7 +219,7 @@ function initApp() {
     email: auth.email,
     role: auth.role,
     isAdmin: auth.role === ROLE.ADMIN,
-    campuses: toSortedArray(campusSet),
+    campuses: SELECTABLE_CAMPUSES,
     grades: toSortedArray(gradeSet),
     months: toSortedArray(monthSet),
     subjects: toSortedArray(subjectSet)
