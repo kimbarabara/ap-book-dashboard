@@ -33,7 +33,7 @@ const BOOK_DB_FIELDS = {
 // 반별교재셋팅 탭의 헤더(컬럼) 이름
 const CLASS_SETTING_FIELDS = {
   CAMPUS: '관',
-  GRADE_CLASS: '학년/반이름',
+  GRADE_CLASS: '학년/반',
   BOOK_NAME: '교재명',
   TARGET_MONTH: '대상 월',
   MEMO: '메모'
