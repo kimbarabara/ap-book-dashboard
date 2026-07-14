@@ -189,10 +189,12 @@ function doGet(e) {
 function initApp() {
   const auth = requireRegisteredUser_();
   const settings = readSheetAsObjects_(SHEET_NAMES.CLASS_SETTING);
+  const books = readSheetAsObjects_(SHEET_NAMES.BOOK_DB);
 
   const campusSet = {};
   const gradeSet = {};
   const monthSet = {};
+  const subjectSet = {};
 
   settings.forEach(function (row) {
     const campus = normalize_(row[CLASS_SETTING_FIELDS.CAMPUS]);
@@ -202,6 +204,11 @@ function initApp() {
     if (campus && campus !== COMMON_CAMPUS) campusSet[campus] = true;
     if (grade) gradeSet[grade] = true;
     if (month && month !== COMMON_MONTH) monthSet[month] = true;
+  });
+
+  books.forEach(function (row) {
+    const subject = normalize_(row[BOOK_DB_FIELDS.SUBJECT]);
+    if (subject) subjectSet[subject] = true;
   });
 
   function toSortedArray(obj) {
@@ -214,7 +221,8 @@ function initApp() {
     isAdmin: auth.role === ROLE.ADMIN,
     campuses: toSortedArray(campusSet),
     grades: toSortedArray(gradeSet),
-    months: toSortedArray(monthSet)
+    months: toSortedArray(monthSet),
+    subjects: toSortedArray(subjectSet)
   };
 }
 
@@ -301,6 +309,64 @@ function getClassBooks(campus, grade, month) {
     role: auth.role,
     isAdmin: auth.role === ROLE.ADMIN,
     condition: { campus: selectedCampus, grade: selectedGrade, month: selectedMonth },
+    rows: result
+  };
+}
+
+/**
+ * 섹션 C — 관/학년/과목 조회 (월 조건 없이 전체 월 대상, 과목으로 필터링)
+ * 교재DB에 등록되지 않은 교재는 과목을 알 수 없으므로 결과에서 제외한다.
+ */
+function getBooksBySubject(campus, grade, subject) {
+  const auth = requireRegisteredUser_();
+
+  const selectedCampus = normalize_(campus);
+  const selectedGrade = normalize_(grade);
+  const selectedSubject = normalize_(subject);
+
+  const settings = readSheetAsObjects_(SHEET_NAMES.CLASS_SETTING);
+  const books = readSheetAsObjects_(SHEET_NAMES.BOOK_DB);
+
+  const bookMap = {};
+  books.forEach(function (row) {
+    const key = normalize_(row[BOOK_DB_FIELDS.BOOK_NAME]);
+    if (key && !bookMap[key]) bookMap[key] = row;
+  });
+
+  const filtered = settings.filter(function (row) {
+    const rowCampus = normalize_(row[CLASS_SETTING_FIELDS.CAMPUS]);
+    const rowGrade = normalize_(row[CLASS_SETTING_FIELDS.GRADE_CLASS]);
+    const bookName = normalize_(row[CLASS_SETTING_FIELDS.BOOK_NAME]);
+    const bookInfo = bookMap[bookName];
+
+    const campusMatch = rowCampus === selectedCampus || rowCampus === COMMON_CAMPUS;
+    const gradeMatch = rowGrade === selectedGrade;
+    const subjectMatch = !!bookInfo && normalize_(bookInfo[BOOK_DB_FIELDS.SUBJECT]) === selectedSubject;
+
+    return campusMatch && gradeMatch && subjectMatch;
+  });
+
+  const result = filtered.map(function (row, index) {
+    const bookName = normalize_(row[CLASS_SETTING_FIELDS.BOOK_NAME]);
+    const bookInfo = bookMap[bookName];
+
+    return {
+      no: index + 1,
+      bookName: bookName,
+      subject: normalize_(bookInfo[BOOK_DB_FIELDS.SUBJECT]),
+      publisher: normalize_(bookInfo[BOOK_DB_FIELDS.PUBLISHER]),
+      isbn: normalize_(bookInfo[BOOK_DB_FIELDS.ISBN]),
+      price: Number(bookInfo[BOOK_DB_FIELDS.PRICE]) || 0,
+      priceLabel: (Number(bookInfo[BOOK_DB_FIELDS.PRICE]) || 0).toLocaleString('ko-KR') + '원',
+      targetMonth: normalize_(row[CLASS_SETTING_FIELDS.TARGET_MONTH]),
+      registered: true
+    };
+  });
+
+  return {
+    role: auth.role,
+    isAdmin: auth.role === ROLE.ADMIN,
+    condition: { campus: selectedCampus, grade: selectedGrade, subject: selectedSubject },
     rows: result
   };
 }
