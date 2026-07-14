@@ -16,7 +16,8 @@
 const SHEET_NAMES = {
   BOOK_DB: '교재DB',
   CLASS_SETTING: '반별교재셋팅',
-  USER_PERMISSION: '사용자권한'
+  USER_PERMISSION: '사용자권한',
+  ACCESS_LOG: '접속기록'
 };
 
 // 교재DB 탭의 헤더(컬럼) 이름
@@ -45,10 +46,29 @@ const USER_PERMISSION_FIELDS = {
   ROLE: '구분'
 };
 
+// 접속기록 탭의 헤더(컬럼) 이름 — 없으면 자동으로 생성됨
+const ACCESS_LOG_FIELDS = {
+  EMAIL: '이메일',
+  ROLE: '역할',
+  TIME: '접속일시'
+};
+
+/**
+ * 3단계 권한
+ * - ADMIN(관리자): 청구 관리 기능 전부 + 접속 기록/현재 접속자 확인 + DB 시트 바로가기
+ * - STAFF(직원): 청구 관리 기능(체크박스/청구총액/선택분 PDF) — 예전 "관리자" 권한과 동일
+ * - VIEWER(뷰어): 조회 + 전체 목록 PDF만 — 예전 "직원" 권한과 동일
+ */
 const ROLE = {
   ADMIN: '관리자',
-  TEACHER: '직원'
+  STAFF: '직원',
+  VIEWER: '뷰어'
 };
+
+// 청구 총액/체크박스/선택분 PDF 등 "관리 기능"을 볼 수 있는 역할
+function isPrivilegedRole_(role) {
+  return role === ROLE.ADMIN || role === ROLE.STAFF;
+}
 
 const COMMON_CAMPUS = '공통';   // '관' 값이 이 값이면 모든 관에서 공통으로 보여야 함
 const COMMON_MONTH = '공통';    // '대상 월' 값이 이 값이면 어떤 월을 선택해도 항상 포함
@@ -150,7 +170,7 @@ function getCurrentUserRole_() {
 function requireRegisteredUser_() {
   const email = getCurrentUserEmail_();
   const role = getCurrentUserRole_();
-  if (!role || (role !== ROLE.ADMIN && role !== ROLE.TEACHER)) {
+  if (!role || (role !== ROLE.ADMIN && role !== ROLE.STAFF && role !== ROLE.VIEWER)) {
     throw new Error('ACCESS_DENIED');
   }
   return { email: email, role: role };
@@ -172,6 +192,8 @@ function doGet(e) {
   const email = getCurrentUserEmail_();
   const role = getCurrentUserRole_();
 
+  logAccess_(email, role);
+
   if (!role) {
     const blocked = HtmlService.createHtmlOutput(
       '<html><body style="font-family:sans-serif;text-align:center;padding-top:120px;">' +
@@ -190,6 +212,22 @@ function doGet(e) {
   return template.evaluate()
     .setTitle('학원 교재 관리 대시보드')
     .addMetaTag('viewport', 'width=1280');
+}
+
+/**
+ * 접속기록 탭에 접속 로그를 한 줄 남긴다. 탭이 없으면 자동 생성한다.
+ * 미등록 이메일의 접속 시도도 남겨서 관리자가 확인할 수 있게 한다.
+ */
+function logAccess_(email, role) {
+  const ss = getSpreadsheet_();
+  let sheet = ss.getSheetByName(SHEET_NAMES.ACCESS_LOG);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.ACCESS_LOG);
+    sheet.getRange(1, 1, 1, 3).setValues([[
+      ACCESS_LOG_FIELDS.EMAIL, ACCESS_LOG_FIELDS.ROLE, ACCESS_LOG_FIELDS.TIME
+    ]]).setFontWeight('bold');
+  }
+  sheet.appendRow([email || '(알 수 없음)', role || '미등록', new Date()]);
 }
 
 /* ===================================================================
@@ -229,7 +267,9 @@ function initApp() {
   return {
     email: auth.email,
     role: auth.role,
-    isAdmin: auth.role === ROLE.ADMIN,
+    isAdmin: isPrivilegedRole_(auth.role),
+    isTopAdmin: auth.role === ROLE.ADMIN,
+    spreadsheetUrl: auth.role === ROLE.ADMIN ? getSpreadsheet_().getUrl() : null,
     campuses: SELECTABLE_CAMPUSES,
     grades: toSortedArray(gradeSet),
     months: toSortedArray(monthSet),
@@ -324,7 +364,7 @@ function getClassBooks(campus, grade, month) {
 
   return {
     role: auth.role,
-    isAdmin: auth.role === ROLE.ADMIN,
+    isAdmin: isPrivilegedRole_(auth.role),
     condition: { campus: selectedCampus, grade: selectedGrade, month: selectedMonth },
     rows: result
   };
@@ -386,10 +426,75 @@ function getBooksBySubject(campus, grade, subject) {
 
   return {
     role: auth.role,
-    isAdmin: auth.role === ROLE.ADMIN,
+    isAdmin: isPrivilegedRole_(auth.role),
     condition: { campus: selectedCampus, grade: selectedGrade, subject: selectedSubject },
     rows: result
   };
+}
+
+/* ===================================================================
+ * 관리자 전용 — 접속 기록 / 현재 접속자 (근사치)
+ * =================================================================== */
+
+const ONLINE_CACHE_PREFIX = 'online:';
+const ONLINE_CACHE_TTL_SECONDS = 150; // 이 시간 안에 하트비트가 없으면 "접속 중"에서 자동 제외됨
+
+/**
+ * 클라이언트가 페이지를 열어둔 동안 주기적으로 호출한다.
+ * 실제 웹소켓처럼 완벽한 실시간은 아니고, 마지막 신호 후 TTL 동안만
+ * "현재 접속 중"으로 표시되는 근사치 방식이다.
+ */
+function heartbeat() {
+  const auth = requireRegisteredUser_();
+  const cache = CacheService.getScriptCache();
+  cache.put(ONLINE_CACHE_PREFIX + auth.email, JSON.stringify({
+    email: auth.email,
+    role: auth.role
+  }), ONLINE_CACHE_TTL_SECONDS);
+  return true;
+}
+
+/**
+ * 사용자권한에 등록된 이메일 중 최근 하트비트가 살아있는 사람만 반환한다.
+ */
+function getOnlineUsers() {
+  requireAdmin_();
+
+  const users = readSheetAsObjects_(SHEET_NAMES.USER_PERMISSION);
+  const keys = users
+    .map(function (row) { return normalize_(row[USER_PERMISSION_FIELDS.EMAIL]).toLowerCase(); })
+    .filter(function (email) { return !!email; })
+    .map(function (email) { return ONLINE_CACHE_PREFIX + email; });
+
+  if (!keys.length) return [];
+
+  const cache = CacheService.getScriptCache();
+  const cached = cache.getAll(keys);
+  return Object.keys(cached).map(function (key) {
+    return JSON.parse(cached[key]);
+  });
+}
+
+/**
+ * 접속기록 탭의 최근 기록을 최신순으로 반환한다 (관리자 전용).
+ */
+function getAccessLogs(limit) {
+  requireAdmin_();
+
+  const rows = readSheetAsObjects_(SHEET_NAMES.ACCESS_LOG);
+  const maxCount = limit || 200;
+
+  return rows
+    .map(function (row) {
+      const time = row[ACCESS_LOG_FIELDS.TIME];
+      return {
+        email: normalize_(row[ACCESS_LOG_FIELDS.EMAIL]),
+        role: normalize_(row[ACCESS_LOG_FIELDS.ROLE]),
+        time: (time instanceof Date) ? Utilities.formatDate(time, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss') : normalize_(time)
+      };
+    })
+    .reverse()
+    .slice(0, maxCount);
 }
 
 /* ===================================================================
@@ -425,7 +530,8 @@ function setupSampleData() {
     USER_PERMISSION_FIELDS.EMAIL, USER_PERMISSION_FIELDS.ROLE
   ], [
     ['admin@example.com', ROLE.ADMIN],
-    ['teacher@example.com', ROLE.TEACHER]
+    ['staff@example.com', ROLE.STAFF],
+    ['viewer@example.com', ROLE.VIEWER]
   ]);
 }
 

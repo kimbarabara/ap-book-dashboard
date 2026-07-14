@@ -44,7 +44,41 @@
     color: #fff;
   }
   .badge.admin { background: #2f5fdb; }
-  .badge.teacher { background: #4caf50; }
+  .badge.staff { background: #4caf50; }
+  .badge.viewer { background: #9e9e9e; }
+
+  .sheet-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    background: #f0f2f5;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13px;
+    border: 1px solid var(--border);
+  }
+  .sheet-link:hover { background: #e6e9ee; }
+
+  .online-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .online-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 14px;
+    background: #eef6ec;
+    border: 1px solid #cfe8c8;
+    font-size: 12px;
+  }
+  .online-chip .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4caf50;
+    display: inline-block;
+  }
 
   .card {
     background: #fff;
@@ -147,6 +181,7 @@
   <header class="topbar">
     <h1>학원 교재 관리 대시보드</h1>
     <div class="user-info">
+      <a id="sheetLink" class="sheet-link" href="#" target="_blank" style="display:none;">📄 DB 스프레드시트 열기</a>
       <span id="userEmailDisplay"><?= userEmail ?></span>
       <span id="roleBadge" class="badge"><?= userRole ?></span>
     </div>
@@ -208,20 +243,43 @@
       <button id="pdfBtnSubject">PDF로 저장</button>
     </div>
   </section>
+
+  <section id="adminOnlySection" class="card" style="display:none;">
+    <h2>접속 현황 (관리자 전용)</h2>
+    <p style="color:#888; font-size:12px; margin-top:-8px;">"현재 접속 중"은 실시간이 아니라 최근 2분 이내 활동한 사람을 보여주는 근사치입니다.</p>
+
+    <h3 style="font-size:14px; margin-bottom:8px;">현재 접속 중</h3>
+    <div id="onlineList" class="online-list"></div>
+    <div id="onlineEmptyMsg" class="empty-msg" style="display:none;">현재 접속 중인 사용자가 없습니다.</div>
+
+    <h3 style="font-size:14px; margin-bottom:8px; margin-top:20px;">접속 기록</h3>
+    <div class="search-row">
+      <button id="loadLogsBtn">최근 기록 불러오기</button>
+    </div>
+    <table id="logTable">
+      <thead><tr><th>이메일</th><th>역할</th><th>접속일시</th></tr></thead>
+      <tbody id="logTableBody"></tbody>
+    </table>
+    <div id="logEmptyMsg" class="empty-msg" style="display:none;">불러온 기록이 없습니다.</div>
+  </section>
 </div>
 
 <div id="printArea"></div>
 
 <script>
   var isAdmin = false;
+  var isTopAdmin = false;
   var currentRows = [];
   var currentCondition = null;
   var currentRowsSubject = [];
   var currentConditionSubject = null;
+  var onlineRefreshTimer = null;
+
+  var ROLE_BADGE_CLASS = { '관리자': 'admin', '직원': 'staff', '뷰어': 'viewer' };
 
   document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('roleBadge').classList.add(
-      '<?= userRole ?>' === '관리자' ? 'admin' : 'teacher'
+      ROLE_BADGE_CLASS['<?= userRole ?>'] || 'viewer'
     );
 
     google.script.run
@@ -238,16 +296,78 @@
 
     document.getElementById('querySubjectBtn').addEventListener('click', doQuerySubject);
     document.getElementById('pdfBtnSubject').addEventListener('click', doPdfSubject);
+
+    document.getElementById('loadLogsBtn').addEventListener('click', loadAccessLogs);
   });
 
   function onInit(data) {
     isAdmin = !!data.isAdmin;
+    isTopAdmin = !!data.isTopAdmin;
     fillSelect('campusSelect', data.campuses, '관 선택');
     fillSelect('gradeSelect', data.grades, '반(학년) 선택');
     fillSelect('monthSelect', data.months, '사용 월 선택');
     fillSelect('campusSelectSubject', data.campuses, '관 선택');
     fillSelect('gradeSelectSubject', data.grades, '반(학년) 선택');
     fillSelect('subjectSelectSubject', data.subjects, '과목 선택');
+
+    if (data.spreadsheetUrl) {
+      var sheetLink = document.getElementById('sheetLink');
+      sheetLink.href = data.spreadsheetUrl;
+      sheetLink.style.display = 'inline-flex';
+    }
+
+    if (isTopAdmin) {
+      document.getElementById('adminOnlySection').style.display = 'block';
+      refreshOnlineUsers();
+      onlineRefreshTimer = setInterval(refreshOnlineUsers, 30000);
+    }
+
+    sendHeartbeat();
+    setInterval(sendHeartbeat, 60000);
+  }
+
+  function sendHeartbeat() {
+    google.script.run.withFailureHandler(function () {}).heartbeat();
+  }
+
+  function refreshOnlineUsers() {
+    google.script.run
+      .withSuccessHandler(renderOnlineUsers)
+      .withFailureHandler(function () {})
+      .getOnlineUsers();
+  }
+
+  function renderOnlineUsers(users) {
+    var list = document.getElementById('onlineList');
+    list.innerHTML = '';
+    document.getElementById('onlineEmptyMsg').style.display = users.length ? 'none' : 'block';
+    users.forEach(function (user) {
+      var chip = document.createElement('div');
+      chip.className = 'online-chip';
+      chip.innerHTML = '<span class="dot"></span>' + escapeHtml(user.email) + ' (' + escapeHtml(user.role) + ')';
+      list.appendChild(chip);
+    });
+  }
+
+  function loadAccessLogs() {
+    google.script.run
+      .withSuccessHandler(renderAccessLogs)
+      .withFailureHandler(onError)
+      .getAccessLogs(200);
+  }
+
+  function renderAccessLogs(logs) {
+    var body = document.getElementById('logTableBody');
+    body.innerHTML = '';
+    document.getElementById('logEmptyMsg').style.display = logs.length ? 'none' : 'block';
+    logs.forEach(function (log) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + escapeHtml(log.email) + '</td>' +
+        '<td>' + escapeHtml(log.role) + '</td>' +
+        '<td>' + escapeHtml(log.time) + '</td>';
+      body.appendChild(tr);
+    });
   }
 
   function fillSelect(id, options, placeholder) {
