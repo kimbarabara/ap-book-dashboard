@@ -47,7 +47,7 @@ const USER_PERMISSION_FIELDS = {
 
 const ROLE = {
   ADMIN: '관리자',
-  TEACHER: '강사'
+  TEACHER: '직원'
 };
 
 const COMMON_CAMPUS = '공용';   // '관' 값이 이 값이면 모든 관에서 공통으로 보여야 함
