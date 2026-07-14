@@ -42,7 +42,7 @@ const CLASS_SETTING_FIELDS = {
 // 사용자권한 탭의 헤더(컬럼) 이름
 const USER_PERMISSION_FIELDS = {
   EMAIL: '이메일',
-  ROLE: '역할'
+  ROLE: '구분'
 };
 
 const ROLE = {
