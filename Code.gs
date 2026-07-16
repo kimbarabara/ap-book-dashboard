@@ -139,7 +139,10 @@ function normalize_(value) {
   if (value instanceof Date) {
     return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
   }
-  return String(value === null || value === undefined ? '' : value).trim();
+  return String(value === null || value === undefined ? '' : value)
+    .replace(/　/g, ' ')   // 전각 공백 -> 일반 공백
+    .replace(/\s+/g, ' ')      // 연속 공백/탭/줄바꿈 -> 공백 하나
+    .trim();
 }
 
 /**
@@ -185,6 +188,35 @@ function gradeMatches_(rowGrade, selectedGrade) {
 
   const selectedGradeNumbers = extractGradeNumbers_(selected);
   return !!selectedGradeNumbers[gradeLabelMatch[1]];
+}
+
+/**
+ * 관 컬럼 와일드카드 판정. 실데이터 기준은 '공통'이지만, 과거 표기인 '공용'이
+ * 섞여 들어와도 동일하게 와일드카드(모든 관에 포함)로 취급한다.
+ */
+function isWildcardCampus_(value) {
+  const v = normalize_(value);
+  return v === COMMON_CAMPUS || v === '공용';
+}
+
+/**
+ * 월 표기를 숫자 문자열로 정규화한다. '08월', '8월', '8', 8 모두 '8'로 취급.
+ * 숫자를 추출할 수 없으면(예: 빈 값) 정규화된 원본 문자열을 그대로 반환한다.
+ */
+function normalizeMonthValue_(value) {
+  const v = normalize_(value);
+  const m = v.match(/\d+/);
+  if (!m) return v;
+  return String(parseInt(m[0], 10));
+}
+
+/**
+ * 반별교재셋팅에 등록된 월(rowMonth)이 조회 조건으로 선택한 월(selectedMonth)에 해당하는지 판정한다.
+ * '공통'은 어떤 월을 선택해도 항상 포함되는 와일드카드이며, 그 외에는 숫자 정규화 후 비교한다.
+ */
+function monthMatches_(rowMonth, selectedMonth) {
+  if (normalize_(rowMonth) === COMMON_MONTH) return true;
+  return normalizeMonthValue_(rowMonth) === normalizeMonthValue_(selectedMonth);
 }
 
 /* ===================================================================
@@ -407,13 +439,16 @@ function getClassBooks(campus, grade, month) {
   });
 
   const filtered = settings.filter(function (row) {
+    const rowBookName = normalize_(row[CLASS_SETTING_FIELDS.BOOK_NAME]);
+    if (!rowBookName) return false; // 교재명이 비어있는 행은 조회 결과에서 제외 (빈 카드 방지)
+
     const rowCampus = normalize_(row[CLASS_SETTING_FIELDS.CAMPUS]);
     const rowGrade = normalize_(row[CLASS_SETTING_FIELDS.GRADE_CLASS]);
     const rowMonth = normalize_(row[CLASS_SETTING_FIELDS.TARGET_MONTH]);
 
-    const campusMatch = rowCampus === selectedCampus || rowCampus === COMMON_CAMPUS;
+    const campusMatch = rowCampus === selectedCampus || isWildcardCampus_(rowCampus);
     const gradeMatch = gradeMatches_(rowGrade, selectedGrade);
-    const monthMatch = rowMonth === COMMON_MONTH || rowMonth === selectedMonth;
+    const monthMatch = monthMatches_(rowMonth, selectedMonth);
 
     return campusMatch && gradeMatch && monthMatch;
   });
@@ -478,7 +513,7 @@ function getBooksBySubject(campus, grade, subject) {
     const bookName = normalize_(row[CLASS_SETTING_FIELDS.BOOK_NAME]);
     const bookInfo = bookMap[bookName];
 
-    const campusMatch = rowCampus === selectedCampus || rowCampus === COMMON_CAMPUS;
+    const campusMatch = rowCampus === selectedCampus || isWildcardCampus_(rowCampus);
     const gradeMatch = gradeMatches_(rowGrade, selectedGrade);
     const subjectMatch = !!bookInfo && normalize_(bookInfo[BOOK_DB_FIELDS.SUBJECT]) === selectedSubject;
 
