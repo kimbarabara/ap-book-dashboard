@@ -93,6 +93,7 @@
     display: flex;
     gap: 10px;
     margin-bottom: 16px;
+    flex-wrap: wrap;
   }
   input[type="text"], input#searchInput, select {
     padding: 8px 10px;
@@ -113,6 +114,8 @@
   }
   button:hover { opacity: 0.9; }
   button.secondary { background: #6b7280; }
+  button.danger { background: #c62828; }
+  button.small { padding: 4px 10px; font-size: 12px; }
 
   .card-grid {
     display: grid;
@@ -157,6 +160,96 @@
 
   .table-footer-row { display: flex; justify-content: flex-end; }
 
+  .section-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .section-title-row h2 { margin: 0; }
+  .count-badge {
+    display: inline-block;
+    background: #c62828;
+    color: #fff;
+    border-radius: 10px;
+    padding: 2px 9px;
+    font-size: 12px;
+    font-weight: bold;
+  }
+
+  .request-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    background: #eee;
+    color: #777;
+  }
+
+  .status-tag { padding: 2px 8px; border-radius: 8px; font-size: 11px; }
+  .status-tag.pending { background: #fff3cd; color: #8a6100; }
+  .status-tag.done { background: #d4edda; color: #256029; }
+  .status-tag.rejected { background: #f8d7da; color: #a12631; }
+
+  .update-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: bold;
+    color: #fff;
+  }
+  .update-tag.cat-feature { background: #2f5fdb; }
+  .update-tag.cat-fix { background: #d98c00; }
+  .update-tag.cat-data { background: #4caf50; }
+  .update-tag.cat-notice { background: #6b7280; }
+  .update-new {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: bold;
+    background: #c62828;
+    color: #fff;
+  }
+  .update-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .update-item:last-child { border-bottom: none; }
+  .update-item-head { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .update-item-date { font-size: 12px; color: var(--muted); }
+  .update-item-content { font-size: 13px; }
+
+  .notice-banner {
+    background: #fff4e5;
+    border: 1px solid #ffcc80;
+    color: #7a4a00;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 13px;
+  }
+  .notice-banner div { margin-bottom: 4px; }
+  .notice-banner div:last-child { margin-bottom: 0; }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: #fff;
+    border-radius: 10px;
+    padding: 24px;
+    width: 440px;
+    max-width: 90vw;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .modal-box h3 { margin-top: 0; font-size: 16px; }
+  .form-field { margin-bottom: 12px; }
+  .form-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .form-field input, .form-field select { width: 100%; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
   #printArea { display: none; }
 
   @media print {
@@ -182,98 +275,169 @@
     <h1>학원 교재 관리 대시보드</h1>
     <div class="user-info">
       <a id="sheetLink" class="sheet-link" href="#" target="_blank" style="display:none;">📄 DB 스프레드시트 열기</a>
+      <button id="updatesBtn" class="sheet-link" type="button">📢 업데이트 소식<span id="updatesBadge" class="count-badge" style="display:none; margin-left:6px;">0</span></button>
+      <? if (userRole === '관리자') { ?>
+      <button id="adminGearBtn" class="sheet-link" type="button">⚙ 관리자 화면<span id="gearBadge" class="count-badge" style="display:none; margin-left:6px;">0</span></button>
+      <? } ?>
       <span id="userEmailDisplay"><?= userEmail ?></span>
       <span id="roleBadge" class="badge"><?= userRole ?></span>
     </div>
   </header>
 
-  <section class="card">
-    <h2>교재 낱개 검색</h2>
-    <div class="search-row">
-      <input type="text" id="searchInput" placeholder="교재명 또는 ISBN을 입력하세요">
-      <button id="searchBtn">검색</button>
-    </div>
-    <div id="searchResults" class="card-grid"></div>
-  </section>
+  <div id="mainView">
+    <div id="noticeBanner" class="notice-banner" style="display:none;"></div>
 
-  <section class="card">
-    <h2>반별 교재 조회</h2>
-    <div class="filter-row">
-      <select id="campusSelect"><option value="">관 선택</option></select>
-      <select id="gradeSelect"><option value="">반(학년) 선택</option></select>
-      <select id="monthSelect"><option value="">사용 월 선택</option></select>
-      <button id="queryBtn">조회</button>
-    </div>
+    <section class="card">
+      <h2>교재 낱개 검색</h2>
+      <div class="search-row">
+        <input type="text" id="searchInput" placeholder="교재명 또는 ISBN을 입력하세요">
+        <button id="searchBtn">검색</button>
+        <button id="newBookRequestBtn" class="secondary" type="button">+ 신규 교재 등록 요청</button>
+      </div>
+      <div id="searchResults" class="card-grid"></div>
+    </section>
 
-    <div class="table-header-row">
-      <div id="totalDisplay" class="total-display" style="display:none;">★ 청구 총액: <span id="totalAmount">0</span>원</div>
-    </div>
+    <section class="card">
+      <h2>반별 교재 조회</h2>
+      <div class="filter-row">
+        <select id="campusSelect"><option value="">관 선택</option></select>
+        <select id="gradeSelect"><option value="">반(학년) 선택</option></select>
+        <select id="monthSelect"><option value="">사용 월 선택</option></select>
+        <button id="queryBtn">조회</button>
+      </div>
 
-    <table id="resultTable">
-      <thead><tr id="tableHeadRow"></tr></thead>
-      <tbody id="tableBody"></tbody>
-    </table>
-    <div id="tableEmptyMsg" class="empty-msg" style="display:none;">조회 결과가 없습니다.</div>
+      <div class="table-header-row">
+        <div id="totalDisplay" class="total-display" style="display:none;">★ 청구 총액: <span id="totalAmount">0</span>원</div>
+      </div>
 
-    <div class="table-footer-row">
-      <button id="pdfBtn">PDF로 저장</button>
-    </div>
-  </section>
+      <table id="resultTable">
+        <thead><tr id="tableHeadRow"></tr></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+      <div id="tableEmptyMsg" class="empty-msg" style="display:none;">조회 결과가 없습니다.</div>
 
-  <section class="card">
-    <h2>관-학년-과목 조회</h2>
-    <div class="filter-row">
-      <select id="campusSelectSubject"><option value="">관 선택</option></select>
-      <select id="gradeSelectSubject"><option value="">반(학년) 선택</option></select>
-      <select id="subjectSelectSubject"><option value="">과목 선택</option></select>
-      <button id="querySubjectBtn">조회</button>
-    </div>
+      <div class="table-footer-row">
+        <button id="pdfBtn">PDF로 저장</button>
+      </div>
+    </section>
 
-    <div class="table-header-row">
-      <div id="totalDisplaySubject" class="total-display" style="display:none;">★ 청구 총액: <span id="totalAmountSubject">0</span>원</div>
-    </div>
+    <section class="card">
+      <h2>과목별 교재 조회</h2>
+      <div class="filter-row">
+        <select id="campusSelectSubject"><option value="">관 선택</option></select>
+        <select id="gradeSelectSubject"><option value="">반(학년) 선택</option></select>
+        <select id="subjectSelectSubject"><option value="">과목 선택</option></select>
+        <button id="querySubjectBtn">조회</button>
+      </div>
 
-    <table id="resultTableSubject">
-      <thead><tr id="tableHeadRowSubject"></tr></thead>
-      <tbody id="tableBodySubject"></tbody>
-    </table>
-    <div id="tableEmptyMsgSubject" class="empty-msg" style="display:none;">조회 결과가 없습니다.</div>
+      <div class="table-header-row">
+        <div id="totalDisplaySubject" class="total-display" style="display:none;">★ 청구 총액: <span id="totalAmountSubject">0</span>원</div>
+      </div>
 
-    <div class="table-footer-row">
-      <button id="pdfBtnSubject">PDF로 저장</button>
-    </div>
-  </section>
+      <table id="resultTableSubject">
+        <thead><tr id="tableHeadRowSubject"></tr></thead>
+        <tbody id="tableBodySubject"></tbody>
+      </table>
+      <div id="tableEmptyMsgSubject" class="empty-msg" style="display:none;">조회 결과가 없습니다.</div>
 
-  <section id="adminOnlySection" class="card" style="display:none;">
-    <h2>접속 현황 (관리자 전용)</h2>
-    <p style="color:#888; font-size:12px; margin-top:-8px;">"현재 접속 중"은 실시간이 아니라 최근 2분 이내 활동한 사람을 보여주는 근사치입니다.</p>
+      <div class="table-footer-row">
+        <button id="pdfBtnSubject">PDF로 저장</button>
+      </div>
+    </section>
+  </div>
 
-    <h3 style="font-size:14px; margin-bottom:8px;">현재 접속 중</h3>
-    <div id="onlineList" class="online-list"></div>
-    <div id="onlineEmptyMsg" class="empty-msg" style="display:none;">현재 접속 중인 사용자가 없습니다.</div>
+  <? if (userRole === '관리자') { ?>
+  <div id="adminView" style="display:none;">
+    <button id="backToMainBtn" class="secondary" type="button" style="margin-bottom:16px;">← 대시보드로</button>
 
-    <h3 style="font-size:14px; margin-bottom:8px; margin-top:20px;">접속 기록</h3>
-    <div class="search-row">
-      <button id="loadLogsBtn">최근 기록 불러오기</button>
-    </div>
-    <table id="logTable">
-      <thead><tr><th>이메일</th><th>역할</th><th>접속일시</th></tr></thead>
-      <tbody id="logTableBody"></tbody>
-    </table>
-    <div id="logEmptyMsg" class="empty-msg" style="display:none;">불러온 기록이 없습니다.</div>
-  </section>
+    <section id="requestQueueSection" class="card">
+      <div class="section-title-row">
+        <h2>미등록 교재 요청함</h2>
+        <span id="requestCountBadge" class="count-badge" style="display:none;">0</span>
+        <button id="refreshRequestsBtn" class="secondary small" style="margin-left:auto;">새로고침</button>
+      </div>
+      <table id="requestTable">
+        <thead><tr><th>교재명</th><th>유형</th><th>요청자</th><th>요청시각</th><th>발견위치/사용예정반</th><th>메모</th><th>상태</th><th>처리</th></tr></thead>
+        <tbody id="requestTableBody"></tbody>
+      </table>
+      <div id="requestEmptyMsg" class="empty-msg" style="display:none;">요청 내역이 없습니다.</div>
+    </section>
+
+    <section id="auditLogSection" class="card">
+      <h2>감사 로그</h2>
+      <div class="filter-row">
+        <input type="text" id="auditFrom" placeholder="시작일 (yyyy-MM-dd)">
+        <input type="text" id="auditTo" placeholder="종료일 (yyyy-MM-dd)">
+        <input type="text" id="auditActor" placeholder="수행자 이메일(일부)">
+        <button id="auditSearchBtn">조회</button>
+      </div>
+      <table id="auditTable">
+        <thead><tr><th>시각</th><th>수행자</th><th>동작</th><th>대상</th><th>내용</th></tr></thead>
+        <tbody id="auditTableBody"></tbody>
+      </table>
+      <div id="auditEmptyMsg" class="empty-msg" style="display:none;">조회된 기록이 없습니다.</div>
+    </section>
+
+    <section id="adminOnlySection" class="card">
+      <h2>접속 현황</h2>
+      <p style="color:#888; font-size:12px; margin-top:-8px;">"현재 접속 중"은 실시간이 아니라 최근 2분 이내 활동한 사람을 보여주는 근사치입니다.</p>
+
+      <h3 style="font-size:14px; margin-bottom:8px;">현재 접속 중</h3>
+      <div id="onlineList" class="online-list"></div>
+      <div id="onlineEmptyMsg" class="empty-msg" style="display:none;">현재 접속 중인 사용자가 없습니다.</div>
+
+      <h3 style="font-size:14px; margin-bottom:8px; margin-top:20px;">접속 기록</h3>
+      <div class="search-row">
+        <button id="loadLogsBtn">최근 기록 불러오기</button>
+      </div>
+      <table id="logTable">
+        <thead><tr><th>이메일</th><th>역할</th><th>접속일시</th></tr></thead>
+        <tbody id="logTableBody"></tbody>
+      </table>
+      <div id="logEmptyMsg" class="empty-msg" style="display:none;">불러온 기록이 없습니다.</div>
+    </section>
+
+    <section id="permissionSection" class="card">
+      <h2>권한 관리</h2>
+      <div class="filter-row">
+        <input type="text" id="newUserEmail" placeholder="이메일">
+        <input type="text" id="newUserName" placeholder="이름(선택)">
+        <select id="newUserRole">
+          <option value="관리자">관리자</option>
+          <option value="직원">직원</option>
+          <option value="뷰어" selected>뷰어</option>
+        </select>
+        <button id="addUserBtn">추가</button>
+      </div>
+      <table id="permissionTable">
+        <thead><tr><th>이메일</th><th>이름</th><th>권한</th><th>등록일</th><th>관리</th></tr></thead>
+        <tbody id="permissionTableBody"></tbody>
+      </table>
+    </section>
+  </div>
+  <? } ?>
 </div>
 
 <div id="printArea"></div>
 
+<div id="modalOverlay" class="modal-overlay">
+  <div class="modal-box" id="modalBox"></div>
+</div>
+
 <script>
   var isAdmin = false;
   var isTopAdmin = false;
+  var currentRole = null;
   var currentRows = [];
   var currentCondition = null;
   var currentRowsSubject = [];
   var currentConditionSubject = null;
   var onlineRefreshTimer = null;
+  var pendingRequestBookNames = [];
+  var allUpdates = [];
+  var campusOptions = [];
+  var gradeOptions = [];
+  var monthOptions = [];
 
   var ROLE_BADGE_CLASS = { '관리자': 'admin', '직원': 'staff', '뷰어': 'viewer' };
 
@@ -297,12 +461,47 @@
     document.getElementById('querySubjectBtn').addEventListener('click', doQuerySubject);
     document.getElementById('pdfBtnSubject').addEventListener('click', doPdfSubject);
 
-    document.getElementById('loadLogsBtn').addEventListener('click', loadAccessLogs);
+    document.getElementById('updatesBtn').addEventListener('click', openUpdatesModal);
+    document.getElementById('newBookRequestBtn').addEventListener('click', openNewBookRequestModal);
+
+    var gearBtn = document.getElementById('adminGearBtn');
+    if (gearBtn) gearBtn.addEventListener('click', showAdminView);
+
+    var backBtn = document.getElementById('backToMainBtn');
+    if (backBtn) backBtn.addEventListener('click', showMainView);
+
+    var loadLogsBtn = document.getElementById('loadLogsBtn');
+    if (loadLogsBtn) loadLogsBtn.addEventListener('click', loadAccessLogs);
+
+    var refreshRequestsBtn = document.getElementById('refreshRequestsBtn');
+    if (refreshRequestsBtn) refreshRequestsBtn.addEventListener('click', loadBookRequests);
+
+    var addUserBtn = document.getElementById('addUserBtn');
+    if (addUserBtn) addUserBtn.addEventListener('click', addUserPermission_);
+
+    var auditSearchBtn = document.getElementById('auditSearchBtn');
+    if (auditSearchBtn) auditSearchBtn.addEventListener('click', loadAuditLogs);
+
+    document.getElementById('tableBody').addEventListener('click', function (e) {
+      if (e.target.classList.contains('reqBtn')) {
+        openRequestModal(e.target.getAttribute('data-book-name'));
+      }
+    });
+    document.getElementById('searchResults').addEventListener('click', function (e) {
+      if (e.target.classList.contains('showClassesBtn')) {
+        openClassesForBookModal(e.target.getAttribute('data-book-name'));
+      }
+    });
+    document.getElementById('modalOverlay').addEventListener('click', function (e) {
+      if (e.target.id === 'modalOverlay') closeModal();
+    });
   });
 
   function onInit(data) {
     isAdmin = !!data.isAdmin;
     isTopAdmin = !!data.isTopAdmin;
+    currentRole = data.role;
+
     fillSelect('campusSelect', data.campuses, '관 선택');
     fillSelect('gradeSelect', data.grades, '반(학년) 선택');
     fillSelect('monthSelect', data.months, '사용 월 선택');
@@ -310,20 +509,66 @@
     fillSelect('gradeSelectSubject', data.grades, '반(학년) 선택');
     fillSelect('subjectSelectSubject', data.subjects, '과목 선택');
 
+    campusOptions = data.campuses || [];
+    gradeOptions = data.grades || [];
+    monthOptions = data.months || [];
+
+    document.getElementById('newBookRequestBtn').style.display = isTopAdmin ? 'none' : '';
+
     if (data.spreadsheetUrl) {
       var sheetLink = document.getElementById('sheetLink');
       sheetLink.href = data.spreadsheetUrl;
       sheetLink.style.display = 'inline-flex';
     }
 
+    renderRejectedNotices(data.rejectedNotices || []);
+    loadUpdates_();
+
+    if (!isTopAdmin) {
+      refreshPendingRequestNames();
+    }
+
     if (isTopAdmin) {
-      document.getElementById('adminOnlySection').style.display = 'block';
-      refreshOnlineUsers();
-      onlineRefreshTimer = setInterval(refreshOnlineUsers, 30000);
+      updateRequestBadge(data.pendingRequestCount || 0);
     }
 
     sendHeartbeat();
     setInterval(sendHeartbeat, 60000);
+  }
+
+  /* ---------------- 관리자 화면 전환 ---------------- */
+
+  function showAdminView() {
+    document.getElementById('mainView').style.display = 'none';
+    document.getElementById('adminView').style.display = 'block';
+    loadBookRequests();
+    loadUserPermissions();
+    refreshOnlineUsers();
+    if (!onlineRefreshTimer) {
+      onlineRefreshTimer = setInterval(refreshOnlineUsers, 30000);
+    }
+    window.scrollTo(0, 0);
+  }
+
+  function showMainView() {
+    document.getElementById('adminView').style.display = 'none';
+    document.getElementById('mainView').style.display = 'block';
+    if (onlineRefreshTimer) {
+      clearInterval(onlineRefreshTimer);
+      onlineRefreshTimer = null;
+    }
+    window.scrollTo(0, 0);
+  }
+
+  function updateGearBadge(count) {
+    var badge = document.getElementById('gearBadge');
+    if (!badge) return;
+    if (count > 0) {
+      badge.textContent = count;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
   }
 
   function sendHeartbeat() {
@@ -391,6 +636,203 @@
     alert('오류가 발생했습니다: ' + message);
   }
 
+  /* ---------------- 모달 공통 ---------------- */
+
+  function openModal(html) {
+    document.getElementById('modalBox').innerHTML = html;
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('open');
+    document.getElementById('modalBox').innerHTML = '';
+  }
+
+  /* ---------------- 반려 안내 배너 ---------------- */
+
+  function renderRejectedNotices(notices) {
+    var banner = document.getElementById('noticeBanner');
+    if (!notices.length) {
+      banner.style.display = 'none';
+      return;
+    }
+    banner.innerHTML = notices.map(function (n) {
+      return '<div>요청하신 "' + escapeHtml(n.bookName) + '" 교재: 반려 (사유: ' + escapeHtml(n.rejectReason || '사유 없음') + ')</div>';
+    }).join('');
+    banner.style.display = 'block';
+  }
+
+  /* ---------------- 업데이트 소식 ---------------- */
+
+  function isRecent_(dateStr) {
+    var d = new Date(dateStr);
+    if (isNaN(d.getTime())) return false;
+    var diffDays = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24);
+    return diffDays >= 0 && diffDays <= 7;
+  }
+
+  function loadUpdates_() {
+    google.script.run
+      .withSuccessHandler(function (updates) {
+        allUpdates = updates;
+        var newCount = updates.filter(function (u) { return isRecent_(u.date); }).length;
+        var badge = document.getElementById('updatesBadge');
+        if (newCount > 0) {
+          badge.textContent = 'NEW ' + newCount;
+          badge.style.display = 'inline-block';
+        } else {
+          badge.style.display = 'none';
+        }
+      })
+      .withFailureHandler(function () {})
+      .getUpdates();
+  }
+
+  var UPDATE_CATEGORY_CLASS = { '기능추가': 'cat-feature', '기능수정': 'cat-fix', '데이터반영': 'cat-data', '공지': 'cat-notice' };
+
+  function openUpdatesModal() {
+    var listHtml = allUpdates.length
+      ? allUpdates.map(function (u) {
+          var cls = UPDATE_CATEGORY_CLASS[u.category] || 'cat-notice';
+          return '<div class="update-item">' +
+            '<div class="update-item-head">' +
+            '<span class="update-tag ' + cls + '">' + escapeHtml(u.category) + '</span>' +
+            '<span class="update-item-date">' + escapeHtml(u.date) + '</span>' +
+            (isRecent_(u.date) ? '<span class="update-new">NEW</span>' : '') +
+            '</div>' +
+            '<div class="update-item-content">' + escapeHtml(u.content) + '</div>' +
+            '</div>';
+        }).join('')
+      : '<div class="empty-msg">등록된 공지가 없습니다.</div>';
+
+    openModal(
+      '<h3>업데이트 소식</h3>' +
+      '<div style="max-height:420px; overflow-y:auto;">' + listHtml + '</div>' +
+      '<div class="modal-actions"><button class="secondary" id="updatesCloseBtn">닫기</button></div>'
+    );
+    document.getElementById('updatesCloseBtn').addEventListener('click', closeModal);
+  }
+
+  /* ---------------- 신규 교재 등록 요청 (유형 B, 직원·뷰어) ---------------- */
+
+  function openNewBookRequestModal() {
+    var html =
+      '<h3>신규 교재 등록 요청</h3>' +
+      '<p style="font-size:12px;color:#888;">아직 편성표에 없는 교재를 미리 요청할 수 있어요. 먼저 비슷한 교재가 있는지 확인합니다.</p>' +
+      '<div class="form-field"><label>교재명 (필수)</label><input type="text" id="nbBookName" placeholder="교재명을 입력하세요"></div>' +
+      '<div class="modal-actions">' +
+      '<button class="secondary" id="nbCancelBtn">취소</button>' +
+      '<button id="nbCheckBtn">확인</button>' +
+      '</div>' +
+      '<div id="nbCheckResult"></div>';
+    openModal(html);
+    document.getElementById('nbCancelBtn').addEventListener('click', closeModal);
+    document.getElementById('nbCheckBtn').addEventListener('click', checkNewBookDuplicate_);
+  }
+
+  function checkNewBookDuplicate_() {
+    var name = document.getElementById('nbBookName').value.trim();
+    if (!name) {
+      alert('교재명을 입력해주세요.');
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function (dbMatches) {
+        var lower = name.toLowerCase();
+        var pendingMatches = pendingRequestBookNames.filter(function (n) {
+          return n.toLowerCase().indexOf(lower) !== -1 || lower.indexOf(n.toLowerCase()) !== -1;
+        });
+        renderDuplicateCheck_(name, dbMatches, pendingMatches);
+      })
+      .withFailureHandler(onError)
+      .searchBooks(name);
+  }
+
+  function renderDuplicateCheck_(name, dbMatches, pendingMatches) {
+    var resultDiv = document.getElementById('nbCheckResult');
+    if (!dbMatches.length && !pendingMatches.length) {
+      openNewBookRequestForm_(name);
+      return;
+    }
+
+    var listHtml = '<p style="font-size:13px; color:#a12631; margin-top:12px;">혹시 이 교재 아닌가요?</p><ul style="padding-left:18px; font-size:13px;">';
+    dbMatches.forEach(function (b) {
+      listHtml += '<li>' + escapeHtml(b.bookName) + (b.publisher ? ' (' + escapeHtml(b.publisher) + ', 이미 등록됨)' : ' (이미 등록됨)') + '</li>';
+    });
+    pendingMatches.forEach(function (n) {
+      listHtml += '<li>' + escapeHtml(n) + ' (이미 요청됨, 처리 대기 중)</li>';
+    });
+    listHtml += '</ul>';
+
+    resultDiv.innerHTML =
+      listHtml +
+      '<div class="modal-actions">' +
+      '<button class="secondary" id="nbBackBtn">이름 다시 입력</button>' +
+      '<button id="nbNotDupBtn">아니요, 새 교재입니다</button>' +
+      '</div>';
+
+    document.getElementById('nbBackBtn').addEventListener('click', function () {
+      resultDiv.innerHTML = '';
+    });
+    document.getElementById('nbNotDupBtn').addEventListener('click', function () {
+      openNewBookRequestForm_(name);
+    });
+  }
+
+  function openNewBookRequestForm_(name) {
+    var campusOpts = campusOptions.map(function (c) { return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>'; }).join('');
+    var gradeOpts = gradeOptions.map(function (g) { return '<option value="' + escapeHtml(g) + '">' + escapeHtml(g) + '</option>'; }).join('');
+    var monthOpts = monthOptions.map(function (m) { return '<option value="' + escapeHtml(m) + '">' + escapeHtml(m) + '</option>'; }).join('');
+
+    var html =
+      '<h3>신규 교재 등록 요청</h3>' +
+      '<div class="form-field"><label>교재명 (필수)</label><input type="text" id="nbBookName2" value="' + escapeHtml(name) + '"></div>' +
+      '<div class="form-field"><label>출판사</label><input type="text" id="nbPublisher"></div>' +
+      '<div class="form-field"><label>ISBN</label><input type="text" id="nbIsbn"></div>' +
+      '<div class="form-field"><label>메모</label><input type="text" id="nbMemo"></div>' +
+      '<div class="form-field">' +
+      '<label>사용 예정 반 (선택)</label>' +
+      '<div class="filter-row" style="margin-bottom:0;">' +
+      '<select id="nbCampus"><option value="">관 선택</option>' + campusOpts + '</select>' +
+      '<select id="nbGrade"><option value="">반(학년) 선택</option>' + gradeOpts + '</select>' +
+      '<select id="nbMonth"><option value="">사용 월 선택</option>' + monthOpts + '</select>' +
+      '</div></div>' +
+      '<div class="modal-actions">' +
+      '<button class="secondary" id="nbCancelBtn2">취소</button>' +
+      '<button id="nbSubmitBtn">요청 제출</button>' +
+      '</div>';
+    openModal(html);
+    document.getElementById('nbCancelBtn2').addEventListener('click', closeModal);
+    document.getElementById('nbSubmitBtn').addEventListener('click', submitNewBookRequest_);
+  }
+
+  function submitNewBookRequest_() {
+    var name = document.getElementById('nbBookName2').value.trim();
+    if (!name) {
+      alert('교재명을 입력해주세요.');
+      return;
+    }
+    var publisher = document.getElementById('nbPublisher').value.trim();
+    var isbn = document.getElementById('nbIsbn').value.trim();
+    var memo = document.getElementById('nbMemo').value.trim();
+    var location = {
+      campus: document.getElementById('nbCampus').value,
+      grade: document.getElementById('nbGrade').value,
+      month: document.getElementById('nbMonth').value
+    };
+
+    google.script.run
+      .withSuccessHandler(function () {
+        closeModal();
+        alert('등록 요청이 접수되었습니다.');
+        refreshPendingRequestNames();
+      })
+      .withFailureHandler(function (err) {
+        alert('요청 실패: ' + ((err && err.message) || err));
+      })
+      .submitBookRequest(name, publisher, isbn, memo, location, 'B');
+  }
+
   /* ---------------- 섹션 A: 낱개 검색 ---------------- */
 
   function doSearch() {
@@ -412,16 +854,40 @@
     books.forEach(function (book) {
       var card = document.createElement('div');
       card.className = 'book-card';
+      var priceRow = (book.price !== undefined)
+        ? '<div class="row"><span>청구가격</span><span>' + book.price.toLocaleString('ko-KR') + '원</span></div>'
+        : '';
       card.innerHTML =
         '<div class="name">' + escapeHtml(book.bookName) + '</div>' +
         '<div class="row"><span>과목</span><span>' + escapeHtml(book.subject) + '</span></div>' +
         '<div class="row"><span>출판사</span><span>' + escapeHtml(book.publisher) + '</span></div>' +
         '<div class="row"><span>ISBN</span><span>' + escapeHtml(book.isbn) + '</span></div>' +
-        '<div class="row"><span>청구가격</span><span>' + book.price.toLocaleString('ko-KR') + '원</span></div>' +
+        priceRow +
         '<div class="row"><span>학년</span><span>' + escapeHtml(book.grade) + '</span></div>' +
-        '<div class="row"><span>대상 월</span><span>' + escapeHtml(book.targetMonth) + '</span></div>';
+        '<div class="row"><span>대상 월</span><span>' + escapeHtml(book.targetMonth) + '</span></div>' +
+        '<div style="margin-top:8px; text-align:right;"><button class="small secondary showClassesBtn" data-book-name="' + escapeHtml(book.bookName) + '">이 교재 쓰는 반 보기</button></div>';
       container.appendChild(card);
     });
+  }
+
+  function openClassesForBookModal(bookName) {
+    google.script.run
+      .withSuccessHandler(function (rows) {
+        var listHtml = rows.length
+          ? '<table><thead><tr><th>관</th><th>반(학년)</th><th>사용 월</th></tr></thead><tbody>' +
+            rows.map(function (r) {
+              return '<tr><td>' + escapeHtml(r.campus) + '</td><td>' + escapeHtml(r.gradeClass) + '</td><td>' + escapeHtml(r.targetMonth) + '</td></tr>';
+            }).join('') + '</tbody></table>'
+          : '<div class="empty-msg">이 교재를 사용하는 반이 없습니다.</div>';
+        openModal(
+          '<h3>' + escapeHtml(bookName) + ' — 사용 반 목록</h3>' +
+          listHtml +
+          '<div class="modal-actions"><button class="secondary" id="closeClassesBtn">닫기</button></div>'
+        );
+        document.getElementById('closeClassesBtn').addEventListener('click', closeModal);
+      })
+      .withFailureHandler(onError)
+      .getClassesForBook(bookName);
   }
 
   /* ---------------- 섹션 B: 반별 조회 ---------------- */
@@ -442,8 +908,11 @@
 
   function renderTable(data) {
     isAdmin = !!data.isAdmin;
+    currentRole = data.role;
     currentRows = data.rows;
     currentCondition = data.condition;
+
+    var showRequestCol = currentRole !== '관리자';
 
     var headRow = document.getElementById('tableHeadRow');
     var body = document.getElementById('tableBody');
@@ -452,7 +921,10 @@
 
     var headers = [];
     if (isAdmin) headers.push('<input type="checkbox" id="selectAllCheckbox">');
-    headers.push('NO', '과목', '교재명', '출판사', 'ISBN', '청구가격', '사용 월');
+    headers.push('NO', '과목', '교재명', '출판사', 'ISBN');
+    if (isAdmin) headers.push('청구가격');
+    headers.push('사용 월');
+    if (showRequestCol) headers.push('등록 요청');
     headers.forEach(function (h) {
       var th = document.createElement('th');
       th.innerHTML = h;
@@ -472,8 +944,19 @@
       cells.push('<td>' + escapeHtml(row.bookName) + '</td>');
       cells.push('<td class="' + (row.registered ? '' : 'unregistered') + '">' + escapeHtml(row.publisher) + '</td>');
       cells.push('<td class="' + (row.registered ? '' : 'unregistered') + '">' + escapeHtml(row.isbn) + '</td>');
-      cells.push('<td class="' + (row.registered ? '' : 'unregistered') + '">' + escapeHtml(row.priceLabel) + '</td>');
+      if (isAdmin) {
+        cells.push('<td class="' + (row.registered ? '' : 'unregistered') + '">' + escapeHtml(row.priceLabel) + '</td>');
+      }
       cells.push('<td>' + escapeHtml(row.targetMonth) + '</td>');
+      if (showRequestCol) {
+        if (row.registered) {
+          cells.push('<td>-</td>');
+        } else if (pendingRequestBookNames.indexOf(row.bookName) !== -1) {
+          cells.push('<td><span class="request-badge">이미 요청됨 (처리 대기 중)</span></td>');
+        } else {
+          cells.push('<td><button class="small reqBtn" data-book-name="' + escapeHtml(row.bookName) + '">등록 요청</button></td>');
+        }
+      }
       tr.innerHTML = cells.join('');
       body.appendChild(tr);
     });
@@ -505,6 +988,61 @@
     document.getElementById('totalAmount').textContent = total.toLocaleString('ko-KR');
   }
 
+  /* ---------------- 미등록 교재 등록 요청 (직원·뷰어) ---------------- */
+
+  function refreshPendingRequestNames(callback) {
+    google.script.run
+      .withSuccessHandler(function (names) {
+        pendingRequestBookNames = names;
+        if (callback) callback();
+      })
+      .withFailureHandler(function () {})
+      .getPendingRequestBookNames();
+  }
+
+  function openRequestModal(bookName) {
+    var html =
+      '<h3>미등록 교재 등록 요청</h3>' +
+      '<div class="form-field"><label>교재명 (필수)</label><input type="text" id="reqBookName" value="' + escapeHtml(bookName) + '"></div>' +
+      '<div class="form-field"><label>출판사</label><input type="text" id="reqPublisher"></div>' +
+      '<div class="form-field"><label>ISBN</label><input type="text" id="reqIsbn"></div>' +
+      '<div class="form-field"><label>메모 (예: 표지에는 이렇게 적혀 있음)</label><input type="text" id="reqMemo"></div>' +
+      '<div class="modal-actions">' +
+      '<button class="secondary" id="reqCancelBtn">취소</button>' +
+      '<button id="reqSubmitBtn">요청 제출</button>' +
+      '</div>';
+    openModal(html);
+    document.getElementById('reqCancelBtn').addEventListener('click', closeModal);
+    document.getElementById('reqSubmitBtn').addEventListener('click', submitBookRequest_);
+  }
+
+  function submitBookRequest_() {
+    var name = document.getElementById('reqBookName').value.trim();
+    if (!name) {
+      alert('교재명을 입력해주세요.');
+      return;
+    }
+    var publisher = document.getElementById('reqPublisher').value.trim();
+    var isbn = document.getElementById('reqIsbn').value.trim();
+    var memo = document.getElementById('reqMemo').value.trim();
+    var location = currentCondition
+      ? { campus: currentCondition.campus, grade: currentCondition.grade, month: currentCondition.month }
+      : {};
+
+    google.script.run
+      .withSuccessHandler(function () {
+        closeModal();
+        alert('등록 요청이 접수되었습니다.');
+        refreshPendingRequestNames(function () {
+          renderTable({ role: currentRole, isAdmin: isAdmin, condition: currentCondition, rows: currentRows });
+        });
+      })
+      .withFailureHandler(function (err) {
+        alert('요청 실패: ' + ((err && err.message) || err));
+      })
+      .submitBookRequest(name, publisher, isbn, memo, location, 'A');
+  }
+
   /* ---------------- 로직 3: PDF 저장 (브라우저 인쇄) ---------------- */
 
   function doPdf() {
@@ -534,6 +1072,7 @@
       ' / 반: ' + escapeHtml(currentCondition.grade) +
       ' / 사용 월: ' + escapeHtml(currentCondition.month);
 
+    var priceHeadCell = isAdmin ? '<th>청구가격</th>' : '';
     var rowsHtml = rowsToPrint.map(function (row, idx) {
       return '<tr>' +
         '<td>' + (idx + 1) + '</td>' +
@@ -541,7 +1080,7 @@
         '<td>' + escapeHtml(row.bookName) + '</td>' +
         '<td>' + escapeHtml(row.publisher) + '</td>' +
         '<td>' + escapeHtml(row.isbn) + '</td>' +
-        '<td>' + escapeHtml(row.priceLabel) + '</td>' +
+        (isAdmin ? '<td>' + escapeHtml(row.priceLabel) + '</td>' : '') +
         '<td>' + escapeHtml(row.targetMonth) + '</td>' +
         '</tr>';
     }).join('');
@@ -549,14 +1088,14 @@
     printArea.innerHTML =
       '<div class="print-condition">' + conditionLine + '</div>' +
       '<table>' +
-      '<thead><tr><th>NO</th><th>과목</th><th>교재명</th><th>출판사</th><th>ISBN</th><th>청구가격</th><th>사용 월</th></tr></thead>' +
+      '<thead><tr><th>NO</th><th>과목</th><th>교재명</th><th>출판사</th><th>ISBN</th>' + priceHeadCell + '<th>사용 월</th></tr></thead>' +
       '<tbody>' + rowsHtml + '</tbody>' +
       '</table>';
 
     window.print();
   }
 
-  /* ---------------- 섹션 C: 관-학년-과목 조회 (월 조건 없음) ---------------- */
+  /* ---------------- 섹션 C: 과목별 교재 조회 (월 조건 없음) ---------------- */
 
   function doQuerySubject() {
     var campus = document.getElementById('campusSelectSubject').value;
@@ -574,6 +1113,7 @@
 
   function renderTableSubject(data) {
     isAdmin = !!data.isAdmin;
+    currentRole = data.role;
     currentRowsSubject = data.rows;
     currentConditionSubject = data.condition;
 
@@ -584,7 +1124,9 @@
 
     var headers = [];
     if (isAdmin) headers.push('<input type="checkbox" id="selectAllCheckboxSubject">');
-    headers.push('NO', '과목', '교재명', '출판사', 'ISBN', '청구가격', '사용 월');
+    headers.push('NO', '과목', '교재명', '출판사', 'ISBN');
+    if (isAdmin) headers.push('청구가격');
+    headers.push('사용 월');
     headers.forEach(function (h) {
       var th = document.createElement('th');
       th.innerHTML = h;
@@ -604,7 +1146,9 @@
       cells.push('<td>' + escapeHtml(row.bookName) + '</td>');
       cells.push('<td>' + escapeHtml(row.publisher) + '</td>');
       cells.push('<td>' + escapeHtml(row.isbn) + '</td>');
-      cells.push('<td>' + escapeHtml(row.priceLabel) + '</td>');
+      if (isAdmin) {
+        cells.push('<td>' + escapeHtml(row.priceLabel) + '</td>');
+      }
       cells.push('<td>' + escapeHtml(row.targetMonth) + '</td>');
       tr.innerHTML = cells.join('');
       body.appendChild(tr);
@@ -639,7 +1183,7 @@
 
   function doPdfSubject() {
     if (!currentConditionSubject || !currentRowsSubject.length) {
-      alert('먼저 관-학년-과목 교재를 조회해주세요.');
+      alert('먼저 과목별 교재를 조회해주세요.');
       return;
     }
 
@@ -664,6 +1208,7 @@
       ' / 반: ' + escapeHtml(currentConditionSubject.grade) +
       ' / 과목: ' + escapeHtml(currentConditionSubject.subject);
 
+    var priceHeadCell = isAdmin ? '<th>청구가격</th>' : '';
     var rowsHtml = rowsToPrint.map(function (row, idx) {
       return '<tr>' +
         '<td>' + (idx + 1) + '</td>' +
@@ -671,7 +1216,7 @@
         '<td>' + escapeHtml(row.bookName) + '</td>' +
         '<td>' + escapeHtml(row.publisher) + '</td>' +
         '<td>' + escapeHtml(row.isbn) + '</td>' +
-        '<td>' + escapeHtml(row.priceLabel) + '</td>' +
+        (isAdmin ? '<td>' + escapeHtml(row.priceLabel) + '</td>' : '') +
         '<td>' + escapeHtml(row.targetMonth) + '</td>' +
         '</tr>';
     }).join('');
@@ -679,11 +1224,226 @@
     printArea.innerHTML =
       '<div class="print-condition">' + conditionLine + '</div>' +
       '<table>' +
-      '<thead><tr><th>NO</th><th>과목</th><th>교재명</th><th>출판사</th><th>ISBN</th><th>청구가격</th><th>사용 월</th></tr></thead>' +
+      '<thead><tr><th>NO</th><th>과목</th><th>교재명</th><th>출판사</th><th>ISBN</th>' + priceHeadCell + '<th>사용 월</th></tr></thead>' +
       '<tbody>' + rowsHtml + '</tbody>' +
       '</table>';
 
     window.print();
+  }
+
+  /* ---------------- 관리자: 미등록 교재 요청함 ---------------- */
+
+  function updateRequestBadge(count) {
+    var badge = document.getElementById('requestCountBadge');
+    if (count > 0) {
+      badge.textContent = count;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+    updateGearBadge(count);
+  }
+
+  function loadBookRequests() {
+    google.script.run
+      .withSuccessHandler(renderBookRequests)
+      .withFailureHandler(onError)
+      .getBookRequests();
+  }
+
+  function formatIsoTime_(iso) {
+    try { return new Date(iso).toLocaleString('ko-KR'); } catch (e) { return iso; }
+  }
+
+  function renderBookRequests(requests) {
+    var body = document.getElementById('requestTableBody');
+    body.innerHTML = '';
+    document.getElementById('requestEmptyMsg').style.display = requests.length ? 'none' : 'block';
+
+    var pendingCount = 0;
+    requests.forEach(function (req) {
+      if (req.status === '대기') pendingCount++;
+      var tr = document.createElement('tr');
+      var loc = [req.location.campus, req.location.grade, req.location.month].filter(function (v) { return !!v; }).join(' / ') || '-';
+      var typeLabel = req.requestType === 'B' ? '신규요청' : '미등록발견';
+      var statusClass = req.status === '대기' ? 'pending' : (req.status === '처리됨' ? 'done' : 'rejected');
+      var actionsHtml = '-';
+      if (req.status === '대기') {
+        actionsHtml =
+          '<button class="small approveBtn" data-id="' + escapeHtml(req.id) + '">승인</button> ' +
+          '<button class="small danger rejectBtn" data-id="' + escapeHtml(req.id) + '">반려</button>';
+      } else if (req.status === '반려' && req.rejectReason) {
+        actionsHtml = '사유: ' + escapeHtml(req.rejectReason);
+      }
+      tr.innerHTML =
+        '<td>' + escapeHtml(req.bookName) + '</td>' +
+        '<td>' + escapeHtml(typeLabel) + '</td>' +
+        '<td>' + escapeHtml(req.requesterEmail) + '</td>' +
+        '<td>' + escapeHtml(formatIsoTime_(req.requestedAt)) + '</td>' +
+        '<td>' + escapeHtml(loc) + '</td>' +
+        '<td>' + escapeHtml(req.memo) + '</td>' +
+        '<td><span class="status-tag ' + statusClass + '">' + escapeHtml(req.status) + '</span></td>' +
+        '<td>' + actionsHtml + '</td>';
+      body.appendChild(tr);
+    });
+
+    updateRequestBadge(pendingCount);
+
+    document.querySelectorAll('.approveBtn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var target = requests.filter(function (r) { return r.id === btn.getAttribute('data-id'); })[0];
+        if (target) openApproveModal(target);
+      });
+    });
+    document.querySelectorAll('.rejectBtn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var reason = prompt('반려 사유를 입력해주세요.');
+        if (reason === null) return;
+        google.script.run
+          .withSuccessHandler(function () { loadBookRequests(); })
+          .withFailureHandler(onError)
+          .rejectBookRequest(btn.getAttribute('data-id'), reason);
+      });
+    });
+  }
+
+  function openApproveModal(req) {
+    var html =
+      '<h3>교재DB 등록 (요청 승인)</h3>' +
+      '<div class="form-field"><label>과목 (필수)</label><input type="text" id="apSubject"></div>' +
+      '<div class="form-field"><label>교재명 (필수)</label><input type="text" id="apBookName" value="' + escapeHtml(req.bookName) + '"></div>' +
+      '<div class="form-field"><label>출판사</label><input type="text" id="apPublisher" value="' + escapeHtml(req.publisher) + '"></div>' +
+      '<div class="form-field"><label>ISBN</label><input type="text" id="apIsbn" value="' + escapeHtml(req.isbn) + '"></div>' +
+      '<div class="form-field"><label>청구가격</label><input type="text" id="apPrice"></div>' +
+      '<div class="form-field"><label>학년</label><input type="text" id="apGrade" value="' + escapeHtml(req.location.grade) + '"></div>' +
+      '<div class="form-field"><label>대상 월</label><input type="text" id="apMonth" value="' + escapeHtml(req.location.month) + '"></div>' +
+      '<p style="font-size:12px;color:#888;">요청 유형: ' + (req.requestType === 'B' ? '신규 요청' : '미등록 발견') + '</p>' +
+      (req.memo ? '<p style="font-size:12px;color:#888;">요청자 메모: ' + escapeHtml(req.memo) + '</p>' : '') +
+      '<div class="modal-actions">' +
+      '<button class="secondary" id="apCancelBtn">취소</button>' +
+      '<button id="apSubmitBtn">승인 및 등록</button>' +
+      '</div>';
+    openModal(html);
+    document.getElementById('apCancelBtn').addEventListener('click', closeModal);
+    document.getElementById('apSubmitBtn').addEventListener('click', function () {
+      var bookData = {
+        subject: document.getElementById('apSubject').value.trim(),
+        bookName: document.getElementById('apBookName').value.trim(),
+        publisher: document.getElementById('apPublisher').value.trim(),
+        isbn: document.getElementById('apIsbn').value.trim(),
+        price: document.getElementById('apPrice').value.trim(),
+        grade: document.getElementById('apGrade').value.trim(),
+        targetMonth: document.getElementById('apMonth').value.trim()
+      };
+      if (!bookData.subject || !bookData.bookName) {
+        alert('과목과 교재명은 필수입니다.');
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function () {
+          closeModal();
+          alert('교재DB에 등록되었습니다.');
+          loadBookRequests();
+        })
+        .withFailureHandler(onError)
+        .approveBookRequest(req.id, bookData);
+    });
+  }
+
+  /* ---------------- 관리자: 권한 관리 ---------------- */
+
+  function loadUserPermissions() {
+    google.script.run
+      .withSuccessHandler(renderUserPermissions)
+      .withFailureHandler(onError)
+      .getUserPermissions();
+  }
+
+  function renderUserPermissions(users) {
+    var body = document.getElementById('permissionTableBody');
+    body.innerHTML = '';
+    users.forEach(function (u) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + escapeHtml(u.email) + '</td>' +
+        '<td>' + escapeHtml(u.name) + '</td>' +
+        '<td>' +
+          '<select class="roleSelect" data-email="' + escapeHtml(u.email) + '">' +
+          ['관리자', '직원', '뷰어'].map(function (r) {
+            return '<option value="' + r + '"' + (r === u.role ? ' selected' : '') + '>' + r + '</option>';
+          }).join('') +
+          '</select>' +
+        '</td>' +
+        '<td>' + escapeHtml(u.registeredDate) + '</td>' +
+        '<td><button class="small danger removeUserBtn" data-email="' + escapeHtml(u.email) + '">회수</button></td>';
+      body.appendChild(tr);
+    });
+
+    document.querySelectorAll('.roleSelect').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        google.script.run
+          .withSuccessHandler(function () { loadUserPermissions(); })
+          .withFailureHandler(function (err) { onError(err); loadUserPermissions(); })
+          .updateUserPermissionRole(sel.getAttribute('data-email'), sel.value);
+      });
+    });
+    document.querySelectorAll('.removeUserBtn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (!confirm(btn.getAttribute('data-email') + ' 계정의 권한을 회수할까요?')) return;
+        google.script.run
+          .withSuccessHandler(function () { loadUserPermissions(); })
+          .withFailureHandler(onError)
+          .removeUserPermission(btn.getAttribute('data-email'));
+      });
+    });
+  }
+
+  function addUserPermission_() {
+    var email = document.getElementById('newUserEmail').value.trim();
+    var name = document.getElementById('newUserName').value.trim();
+    var role = document.getElementById('newUserRole').value;
+    if (!email) {
+      alert('이메일을 입력해주세요.');
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function () {
+        document.getElementById('newUserEmail').value = '';
+        document.getElementById('newUserName').value = '';
+        loadUserPermissions();
+      })
+      .withFailureHandler(onError)
+      .addUserPermission(email, role, name);
+  }
+
+  /* ---------------- 관리자: 감사 로그 ---------------- */
+
+  function loadAuditLogs() {
+    var filter = {
+      from: document.getElementById('auditFrom').value.trim(),
+      to: document.getElementById('auditTo').value.trim(),
+      actor: document.getElementById('auditActor').value.trim()
+    };
+    google.script.run
+      .withSuccessHandler(renderAuditLogs)
+      .withFailureHandler(onError)
+      .getAuditLogs(filter);
+  }
+
+  function renderAuditLogs(logs) {
+    var body = document.getElementById('auditTableBody');
+    body.innerHTML = '';
+    document.getElementById('auditEmptyMsg').style.display = logs.length ? 'none' : 'block';
+    logs.forEach(function (log) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + escapeHtml(log.time) + '</td>' +
+        '<td>' + escapeHtml(log.actor) + '</td>' +
+        '<td>' + escapeHtml(log.action) + '</td>' +
+        '<td>' + escapeHtml(log.target) + '</td>' +
+        '<td>' + escapeHtml(log.summary) + '</td>';
+      body.appendChild(tr);
+    });
   }
 
   function escapeHtml(value) {
