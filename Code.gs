@@ -174,17 +174,24 @@ function sortBySubjectThenMonth_(rows) {
 }
 
 /**
- * 반 이름(예: '6M/6P')을 '/'로 분리해 각 토큰이 숫자로 "시작"하는 경우에만
- * 그 선행 숫자를 학년으로 추출한다. 알파벳으로 시작하는 토큰(G2, G2.5 등)은
- * 숫자가 있어도 레벨 표기로 간주해 학년을 추출하지 않는다.
- * 예: '6M/6P' -> {'6': true}, 'G2' -> {}, '5S' -> {'5': true}
+ * 반 이름(예: '6M/6P')을 '/'로 분리해, 아래 두 조건을 모두 만족하는 토큰에서만
+ * 선행 숫자를 학년으로 추출한다.
+ *   (a) 토큰이 숫자로 시작
+ *   (b) 토큰의 알파벳 부분에 E/W/G가 하나도 없음 (대소문자 무관)
+ * 알파벳 부분에 E/W/G가 포함된 반(6E, 6W, G2, G2.5, G3 등)은 "단과반"으로 보고
+ * 학년을 상속하지 않는다 — 학년 추출 안 함(정확 일치로만 매칭됨).
+ * 예: '6M/6P' -> {'6': true}, '6E' -> {}, 'G2' -> {}, '5S' -> {'5': true}
  */
 function extractGradeNumbers_(gradeLabel) {
   const tokens = normalize_(gradeLabel).split('/');
   const grades = {};
   tokens.forEach(function (token) {
-    const m = token.trim().match(/^(\d+)/);
-    if (m) grades[m[1]] = true;
+    const t = token.trim();
+    const m = t.match(/^(\d+)/);
+    if (!m) return;
+    const alphaPart = t.replace(/[0-9.]/g, '');
+    if (/[EWG]/i.test(alphaPart)) return; // 단과반(E/W/G 포함) — 학년 추출 제외
+    grades[m[1]] = true;
   });
   return grades;
 }
