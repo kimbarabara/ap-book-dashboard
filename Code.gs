@@ -63,8 +63,25 @@ const UPDATE_LOG_FIELDS = {
   DATE: '날짜',
   CATEGORY: '분류',
   CONTENT: '내용',
-  VISIBLE: '표시여부'
+  VISIBLE: '표시여부',
+  SOURCE: '생성구분'   // '자동' | '수동'
 };
+
+/**
+ * 기능 업데이트 반자동 등록용 체인지로그.
+ * 항목: { date: 'yyyy-MM-dd', category: '기능추가'|'기능수정'|'데이터반영'|'공지', content: '한 줄 설명' }
+ * 웹앱에 관리자가 접속할 때(initApp) 이 배열에는 있지만 업데이트 시트에는 없는 항목을
+ * 자동으로 시트에 추가한다 (날짜+내용 기준 중복 방지).
+ *
+ * [개발 규칙] 이후 이 프로젝트 코드를 수정하는 모든 작업은, 사용자에게 보이는 변경이
+ * 있다면 이 배열 맨 아래에 한 줄 항목을 추가할 것 (내부 리팩토링 등 사용자에게
+ * 보이지 않는 변경은 제외).
+ */
+const CHANGELOG = [
+  { date: '2026-07-16', category: '기능추가', content: '권한 체계(관리자/직원/뷰어) 도입, 미등록 교재 등록 요청·요청함, 권한 관리 화면, 감사 로그, "이 교재를 쓰는 반" 역조회 추가' },
+  { date: '2026-07-16', category: '기능수정', content: '관리자 전용 화면(요청함/권한관리/감사로그/접속현황)을 별도 화면으로 분리' },
+  { date: '2026-07-17', category: '기능추가', content: '업데이트 소식 게시판 추가: 교재 등록 시 자동 요약, 기능 업데이트 자동 반영, 관리자 수동 공지 지원' }
+];
 
 /**
  * 3단계 권한
@@ -379,6 +396,8 @@ function initApp() {
 
   if (result.isTopAdmin) {
     result.pendingRequestCount = getAllBookRequests_().filter(function (r) { return r.status === '대기'; }).length;
+    // 업데이트 시트는 직원/뷰어에게는 쓰기 권한이 없으므로, 관리자가 접속했을 때만 동기화한다.
+    syncChangelogToUpdateLog_();
   }
 
   return result;
@@ -806,6 +825,7 @@ function approveBookRequest(requestId, bookData) {
   props.setProperty(entry.id, JSON.stringify(entry));
 
   logAudit_(auth.email, '등록', finalBookName, '등록 요청 승인 → 교재DB 등록 (요청ID: ' + entry.id + ')');
+  recordDailyBookChangeSummary_('등록', finalBookName);
   return entry;
 }
 
@@ -1028,6 +1048,133 @@ function getUpdates() {
   return visible;
 }
 
+function todayDateString_() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+/**
+ * 업데이트 시트에서 오늘 날짜 + 생성구분 '자동' + 해당 성격(marker 포함)인 행을 찾아 내용을 갱신하고,
+ * 없으면 새 행을 추가한다. 교재DB 변경(등록/수정/삭제)은 전부 관리자가 요청 승인 화면에서
+ * 수행하므로(이미 시트 편집자 권한 보유), 이 함수도 관리자 컨텍스트에서만 호출된다.
+ */
+function upsertUpdateLogRow_(dateStr, category, content, marker) {
+  const sheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.UPDATE_LOG);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); });
+  const dateCol = headers.indexOf(UPDATE_LOG_FIELDS.DATE);
+  const contentCol = headers.indexOf(UPDATE_LOG_FIELDS.CONTENT);
+  const sourceCol = headers.indexOf(UPDATE_LOG_FIELDS.SOURCE);
+
+  if (lastRow >= 2 && dateCol !== -1 && contentCol !== -1) {
+    const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    for (let i = 0; i < values.length; i++) {
+      const rowDate = normalize_(values[i][dateCol]);
+      const rowSource = sourceCol === -1 ? '' : normalize_(values[i][sourceCol]);
+      const rowContent = normalize_(values[i][contentCol]);
+      if (rowDate === dateStr && rowSource === '자동' && rowContent.indexOf(marker) !== -1) {
+        sheet.getRange(i + 2, contentCol + 1).setValue(content);
+        return;
+      }
+    }
+  }
+
+  const newRow = headers.map(function (h) {
+    switch (h) {
+      case UPDATE_LOG_FIELDS.DATE: return dateStr;
+      case UPDATE_LOG_FIELDS.CATEGORY: return category;
+      case UPDATE_LOG_FIELDS.CONTENT: return content;
+      case UPDATE_LOG_FIELDS.VISIBLE: return 'Y';
+      case UPDATE_LOG_FIELDS.SOURCE: return '자동';
+      default: return '';
+    }
+  });
+  sheet.appendRow(newRow);
+}
+
+const DAILY_SUMMARY_KEY_PREFIX = 'dailyBookSummary_';
+const DAILY_SUMMARY_MARKER = { '등록': '신규 등록', '수정': '단가', '삭제': '삭제' };
+
+function buildDailySummaryContent_(actionType, data) {
+  if (actionType === '등록') {
+    return '교재 ' + data.names.length + '건 신규 등록: ' + data.names.join(', ');
+  }
+  if (actionType === '삭제') {
+    return '교재 ' + data.names.length + '건 삭제: ' + data.names.join(', ');
+  }
+  return '단가 ' + data.count + '건 수정';
+}
+
+/**
+ * 교재DB 변경(등록/수정/삭제)이 있을 때마다 호출해, 당일 성격별 요약 행 하나로 누적한다.
+ * [보안 필수] 가격 금액은 절대 포함하지 않는다 — 건수/교재명만 기록.
+ * 실패해도 원래 하려던 작업(등록 승인 등)을 막지 않도록 조용히 무시한다.
+ */
+function recordDailyBookChangeSummary_(actionType, bookName) {
+  try {
+    const today = todayDateString_();
+    const props = PropertiesService.getScriptProperties();
+    const key = DAILY_SUMMARY_KEY_PREFIX + actionType + '_' + today;
+    const raw = props.getProperty(key);
+    const data = raw ? JSON.parse(raw) : { names: [], count: 0 };
+
+    if (actionType === '수정') {
+      data.count = (data.count || 0) + 1;
+    } else {
+      const name = normalize_(bookName);
+      if (name && data.names.indexOf(name) === -1) data.names.push(name);
+    }
+    props.setProperty(key, JSON.stringify(data));
+
+    const content = buildDailySummaryContent_(actionType, data);
+    upsertUpdateLogRow_(today, '데이터반영', content, DAILY_SUMMARY_MARKER[actionType]);
+  } catch (e) {
+    // 업데이트 공지 기록 실패가 실제 작업을 막지 않도록 한다.
+  }
+}
+
+/**
+ * CHANGELOG 배열에는 있지만 업데이트 시트에는 아직 없는 항목을 자동으로 추가한다.
+ * (날짜+내용 기준 중복 방지) 관리자 컨텍스트에서만 호출되므로 시트 쓰기 권한 문제가 없다.
+ */
+function syncChangelogToUpdateLog_() {
+  try {
+    const sheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.UPDATE_LOG);
+    if (!sheet) return;
+
+    const existing = readSheetAsObjects_(SHEET_NAMES.UPDATE_LOG);
+    const existingKeys = {};
+    existing.forEach(function (row) {
+      const key = normalize_(row[UPDATE_LOG_FIELDS.DATE]) + '|' + normalize_(row[UPDATE_LOG_FIELDS.CONTENT]);
+      existingKeys[key] = true;
+    });
+
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function (h) { return String(h).trim(); });
+
+    CHANGELOG.forEach(function (entry) {
+      const key = entry.date + '|' + entry.content;
+      if (existingKeys[key]) return;
+
+      const newRow = headers.map(function (h) {
+        switch (h) {
+          case UPDATE_LOG_FIELDS.DATE: return entry.date;
+          case UPDATE_LOG_FIELDS.CATEGORY: return entry.category;
+          case UPDATE_LOG_FIELDS.CONTENT: return entry.content;
+          case UPDATE_LOG_FIELDS.VISIBLE: return 'Y';
+          case UPDATE_LOG_FIELDS.SOURCE: return '자동';
+          default: return '';
+        }
+      });
+      sheet.appendRow(newRow);
+      existingKeys[key] = true;
+    });
+  } catch (e) {
+    // 동기화 실패가 로그인 자체를 막지 않도록 한다.
+  }
+}
+
 /* ===================================================================
  * 샘플 데이터 세팅 (Apps Script 편집기에서 관리자가 직접 1회 실행)
  * 함수 목록에서 setupSampleData 선택 후 "실행" 버튼으로 실행
@@ -1073,9 +1220,10 @@ function setupSampleData() {
   ], []);
 
   createSheetIfMissing_(ss, SHEET_NAMES.UPDATE_LOG, [
-    UPDATE_LOG_FIELDS.DATE, UPDATE_LOG_FIELDS.CATEGORY, UPDATE_LOG_FIELDS.CONTENT, UPDATE_LOG_FIELDS.VISIBLE
+    UPDATE_LOG_FIELDS.DATE, UPDATE_LOG_FIELDS.CATEGORY, UPDATE_LOG_FIELDS.CONTENT,
+    UPDATE_LOG_FIELDS.VISIBLE, UPDATE_LOG_FIELDS.SOURCE
   ], [
-    [today, '공지', '교재 대시보드에 업데이트 소식 게시판이 추가되었습니다.', 'Y']
+    [today, '공지', '교재 대시보드에 업데이트 소식 게시판이 추가되었습니다.', 'Y', '수동']
   ]);
 }
 
@@ -1127,12 +1275,31 @@ function runFeatureUpgradeSetup() {
     ], []);
   }
 
-  if (!ss.getSheetByName(SHEET_NAMES.UPDATE_LOG)) {
+  const updateSheet = ss.getSheetByName(SHEET_NAMES.UPDATE_LOG);
+  if (!updateSheet) {
     createSheetIfMissing_(ss, SHEET_NAMES.UPDATE_LOG, [
-      UPDATE_LOG_FIELDS.DATE, UPDATE_LOG_FIELDS.CATEGORY, UPDATE_LOG_FIELDS.CONTENT, UPDATE_LOG_FIELDS.VISIBLE
+      UPDATE_LOG_FIELDS.DATE, UPDATE_LOG_FIELDS.CATEGORY, UPDATE_LOG_FIELDS.CONTENT,
+      UPDATE_LOG_FIELDS.VISIBLE, UPDATE_LOG_FIELDS.SOURCE
     ], [
-      [Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'), '공지', '교재 대시보드에 업데이트 소식 게시판이 추가되었습니다.', 'Y']
+      [Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'), '공지', '교재 대시보드에 업데이트 소식 게시판이 추가되었습니다.', 'Y', '수동']
     ]);
+  } else {
+    const updateHeaders = updateSheet.getRange(1, 1, 1, updateSheet.getLastColumn()).getValues()[0]
+      .map(function (h) { return String(h).trim(); });
+    let sourceCol = updateHeaders.indexOf(UPDATE_LOG_FIELDS.SOURCE);
+    if (sourceCol === -1) {
+      sourceCol = updateHeaders.length;
+      updateSheet.getRange(1, sourceCol + 1).setValue(UPDATE_LOG_FIELDS.SOURCE).setFontWeight('bold');
+    }
+    const updateLastRow = updateSheet.getLastRow();
+    if (updateLastRow >= 2) {
+      const sourceRange = updateSheet.getRange(2, sourceCol + 1, updateLastRow - 1, 1);
+      const sourceValues = sourceRange.getValues();
+      const filledSource = sourceValues.map(function (row) {
+        return [row[0] === '' || row[0] === null ? '수동' : row[0]];
+      });
+      sourceRange.setValues(filledSource);
+    }
   }
 }
 
